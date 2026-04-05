@@ -8,6 +8,7 @@ const logger = require("./utils/logger");
 const errorHandler = require("./middleware/errorHandler");
 const correlationId = require("./middleware/correlationId");
 const authRoutes = require("./routes/authRoutes");
+const proxyRoutes = require("./routes/proxyRoutes");
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.get("/health", async (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api", proxyRoutes);
 
 app.use(errorHandler);
 
