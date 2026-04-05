@@ -8,7 +8,7 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,7 +29,6 @@ services:
       - "3000:3000"
     env_file:
       - .env
-      - ./gateway-service/.env.example
     depends_on:
       mongodb:
         condition: service_healthy
@@ -44,7 +43,6 @@ services:
       - "8001:8001"
     env_file:
       - .env
-      - ./nlp-service/.env.example
     depends_on:
       redis:
         condition: service_healthy
@@ -57,7 +55,6 @@ services:
       - "8003:8003"
     env_file:
       - .env
-      - ./agent-service/.env.example
     depends_on:
       redis:
         condition: service_healthy
