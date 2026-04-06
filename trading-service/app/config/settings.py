@@ -10,6 +10,22 @@ class Settings(BaseSettings):
     nlp_service_url: str = "http://localhost:8001"
     broker_mode: str = "paper"
 
+    # OANDA
+    oanda_api_key: str = ""
+    oanda_account_id: str = ""
+    oanda_base_url: str = "https://api-fxpractice.oanda.com"
+
+    # Binance via CCXT
+    binance_api_key: str = ""
+    binance_api_secret: str = ""
+    binance_sandbox: bool = True
+
+    # MetaTrader 5
+    mt5_login: int = 0
+    mt5_password: str = ""
+    mt5_server: str = ""
+    mt5_path: str = ""
+
     class Config:
         env_file = ".env"
 
