@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     news_fetch_interval_minutes: int = 15
     news_max_age_hours: int = 4
+    jblanked_api_key: str = ""
 
     class Config:
         env_file = ".env"
