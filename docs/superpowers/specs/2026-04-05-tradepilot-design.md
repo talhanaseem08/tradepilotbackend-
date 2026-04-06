@@ -16,8 +16,8 @@ The system enforces a mandatory news sentiment gate (FinBERT) before every trade
 | Authentication | JWT + API Keys | JWT for user sessions, API keys for programmatic/service access |
 | Local GPU | AMD Radeon RX 6500 XT (4 GB VRAM) | Consumer AMD card — no CUDA, no bitsandbytes, limited ROCm. All local inference runs on CPU. |
 | Remote GPU | AMD Developer Cloud (DigitalOcean) — AMD Instinct MI210/MI250 (64-128 GB HBM) | $100 credit, used for DeepSeek R1 inference only |
-| Mistral 7B hosting | Ollama on local machine (CPU) | LoRA adapter merged into base → converted to GGUF Q4_K_M → imported into Ollama. CPU inference ~5-10 tok/s, 3-8s per request. |
-| FinBERT hosting | transformers on local CPU | ~110M params, fast on CPU (<1s per request). Fine-tuned on Colab, weights saved locally. |
+| Mistral 7B hosting | Ollama on local machine (CPU) as `tradepilot-mistral` | Unsloth-trained, merged, converted to GGUF Q4_K_M (~4.1 GB). Imported into Ollama. CPU inference ~7 tok/s, ~15s per request. GGUF source: `E:\fyp with claude\tradepilot_mistral_FINAL\tradepilot-mistral-Q4_K_M.gguf` |
+| FinBERT hosting | transformers on local CPU using `tabularisai/ModernFinBERT` from HuggingFace Hub | ~110M params, fast on CPU (<1s per request). Downloaded from Hub on first startup, cached locally. |
 | DeepSeek R1 hosting | Ollama on remote AMD GPU VM (AMD Developer Cloud) | `deepseek-r1:14b` on AMD Instinct GPU via ROCm. Agent service connects via `http://<vm-ip>:11434`. VM spun up only when needed to conserve credit. |
 | Inter-service sync | REST (request/response operations) | Prompt parsing, sentiment checks, health monitoring |
 | Inter-service async | Redis Streams (pipeline operations) | Trade execution, bot monitoring, agent triggering |
