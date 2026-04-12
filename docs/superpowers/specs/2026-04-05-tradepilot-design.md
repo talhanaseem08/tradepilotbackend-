@@ -56,7 +56,7 @@ Before the system runs, these one-time steps must be completed:
 **DeepSeek R1 (remote):**
 1. Provision AMD GPU VM on AMD Developer Cloud
 2. Install Ollama (ROCm build): `curl -fsSL https://ollama.com/install.sh | sh`
-3. Pull model: `ollama pull deepseek-r1:14b`
+3. Pull model: `olla ma pull deepseek-r1:14b`
 4. Configure firewall to allow port 11434 from your IP only
 5. Note the VM's public IP for agent service config
 

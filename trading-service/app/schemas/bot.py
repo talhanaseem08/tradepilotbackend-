@@ -8,6 +8,7 @@ class BotCreate(BaseModel):
     timeframe: str = "1h"
     parameters: dict = {}
     broker_mode: str = "paper"
+    user_id: str = None  # To link bot to specific user account
 
 
 class BotResponse(BaseModel):

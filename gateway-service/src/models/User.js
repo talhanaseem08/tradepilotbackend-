@@ -11,7 +11,13 @@ const userSchema = new mongoose.Schema(
     },
     passwordHash: {
       type: String,
-      required: true,
+      required: false,
+    },
+    /** Google `sub` claim — set when user signs in with Google (no password). */
+    googleSub: {
+      type: String,
+      sparse: true,
+      unique: true,
     },
     apiKey: {
       type: String,
@@ -22,6 +28,15 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["user", "admin"],
       default: "user",
+    },
+    /** SHA-256 hex of raw reset token (never store the raw token). */
+    passwordResetTokenHash: {
+      type: String,
+      default: null,
+    },
+    passwordResetExpires: {
+      type: Date,
+      default: null,
     },
   },
   { timestamps: true }

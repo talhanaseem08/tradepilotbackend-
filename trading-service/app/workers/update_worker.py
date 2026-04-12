@@ -1,7 +1,7 @@
 import asyncio
 import json
 from app.config.redis import get_redis
-from app.core.redis_client import set_bot_status, store_bot_params
+from app.core.redis_client import set_bot_status, store_bot_params, backup_bot_params
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -28,6 +28,8 @@ async def _process_update(data: dict):
 
     logger.info("bot update received", bot_id=bot_id, reasoning=reasoning[:100])
 
+    # Backup current params before overwriting so rollback is possible
+    await backup_bot_params(bot_id)
     await store_bot_params(bot_id, new_params)
     await set_bot_status(bot_id, "active")
 

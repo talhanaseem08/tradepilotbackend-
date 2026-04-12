@@ -41,3 +41,18 @@ async def get_bot_params(bot_id: str) -> dict:
     redis = await get_redis()
     raw = await redis.hgetall(f"bot:{bot_id}:params")
     return dict(raw) if raw else {}
+
+
+async def backup_bot_params(bot_id: str):
+    """Snapshot current params to :params:backup before applying new ones."""
+    redis = await get_redis()
+    current = await redis.hgetall(f"bot:{bot_id}:params")
+    if current:
+        await redis.delete(f"bot:{bot_id}:params:backup")
+        await redis.hset(f"bot:{bot_id}:params:backup", mapping=current)
+
+
+async def get_backup_params(bot_id: str) -> dict:
+    redis = await get_redis()
+    raw = await redis.hgetall(f"bot:{bot_id}:params:backup")
+    return dict(raw) if raw else {}

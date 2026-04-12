@@ -12,6 +12,20 @@ router = APIRouter(tags=["backtest"])
 @router.post("/backtest", response_model=BacktestResult)
 async def backtest(request: BacktestRequest):
     try:
+        # Auto-fetch candles from OANDA when date range given but no candles supplied
+        if not request.candles and request.date_from and request.date_to:
+            from app.adapters.oanda_provider import OandaProvider
+            provider = OandaProvider()
+            candles = await provider.fetch_candles_range(
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                date_from=request.date_from,
+                date_to=request.date_to,
+            )
+            request = request.model_copy(update={"candles": candles})
+            logger.info("auto-fetched candles for backtest",
+                        symbol=request.symbol, count=len(candles))
+
         result = await run_backtest(request)
 
         db = get_db()
@@ -37,7 +51,7 @@ async def backtest(request: BacktestRequest):
 
 
 @router.get("/backtest/reports")
-async def get_reports(symbol: str = None, limit: int = 20):
+async def get_reports(symbol: str = None, bot_type: str = None, limit: int = 20, page: int = 1):
     db = get_db()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not connected")
@@ -45,15 +59,26 @@ async def get_reports(symbol: str = None, limit: int = 20):
     query = {}
     if symbol:
         query["symbol"] = symbol.upper()
+    if bot_type:
+        query["bot_type"] = bot_type
 
-    cursor = db.backtest_reports.find(query).sort("created_at", -1).limit(limit)
+    skip = (page - 1) * limit
+    total = await db.backtest_reports.count_documents(query)
+    cursor = db.backtest_reports.find(query).sort("created_at", -1).skip(skip).limit(limit)
+
     reports = []
     async for doc in cursor:
         doc["_id"] = str(doc["_id"])
         doc["created_at"] = doc["created_at"].isoformat() if doc.get("created_at") else None
         reports.append(doc)
 
-    return {"reports": reports, "count": len(reports)}
+    return {
+        "reports": reports,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": (total + limit - 1) // limit,
+    }
 
 
 @router.get("/backtest/reports/{report_id}")

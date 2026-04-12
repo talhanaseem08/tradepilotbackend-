@@ -1,5 +1,6 @@
 import httpx
 from app.config.settings import settings
+from app.core.circuit_breaker import nlp_breaker
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -11,13 +12,19 @@ class NLPClient:
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=30.0)
 
     async def get_sentiment(self, symbol: str, market: str = "forex") -> dict | None:
-        try:
+        async def _call():
             resp = await self.client.post(
                 "/sentiment",
                 json={"symbol": symbol, "market": market},
             )
             resp.raise_for_status()
             return resp.json()
+
+        try:
+            return await nlp_breaker.call(_call)
+        except RuntimeError as e:
+            logger.error("nlp circuit breaker open", symbol=symbol, error=str(e))
+            return None
         except Exception as e:
             logger.error("nlp sentiment request failed", error=str(e), symbol=symbol)
             return None

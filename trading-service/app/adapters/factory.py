@@ -17,9 +17,10 @@ def create_broker(market: str = "forex") -> BrokerAdapter:
         logger.info("using CCXT/Binance broker")
         return CCXTBrokerAdapter()
 
-    from app.adapters.mt5_adapter import MT5BrokerAdapter
-    logger.info("using MT5 broker")
-    return MT5BrokerAdapter()
+    # MT5 requires Windows terminal — use OANDA REST for forex execution instead
+    from app.adapters.oanda_adapter import OandaBrokerAdapter
+    logger.info("using OANDA broker")
+    return OandaBrokerAdapter()
 
 
 def create_data_provider(market: str = "forex") -> DataProvider:

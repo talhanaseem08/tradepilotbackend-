@@ -26,7 +26,7 @@ services:
   gateway:
     build: ./gateway-service
     ports:
-      - "3000:3000"
+      - "3001:3000"
     env_file:
       - .env
     depends_on:
@@ -49,15 +49,34 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  trading-service:
+    build: ./trading-service
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   agent-service:
     build: ./agent-service
     ports:
       - "8003:8003"
     env_file:
       - .env
+    volumes:
+      - ppo_models:/app/models
     depends_on:
+      mongodb:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
 volumes:
   mongo_data:
+  ppo_models:

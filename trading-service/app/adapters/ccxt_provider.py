@@ -1,6 +1,8 @@
 import ccxt.async_support as ccxt
 from app.adapters.data_provider import DataProvider
 from app.config.settings import settings
+from app.core.circuit_breaker import binance_breaker
+from app.utils.retry import with_retry
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -24,42 +26,43 @@ class CCXTProvider(DataProvider):
         tf = TIMEFRAME_MAP.get(timeframe, "1h")
         formatted_symbol = self._format_symbol(symbol)
 
+        async def _fetch():
+            return await self.exchange.fetch_ohlcv(formatted_symbol, timeframe=tf, limit=count)
+
         try:
-            ohlcv = await self.exchange.fetch_ohlcv(
-                formatted_symbol, timeframe=tf, limit=count
-            )
+            ohlcv = await binance_breaker.call(with_retry, _fetch, retries=3, delay=1.0, label=f"ccxt_candles:{formatted_symbol}")
 
-            candles = []
-            for row in ohlcv:
-                candles.append({
-                    "open": row[1],
-                    "high": row[2],
-                    "low": row[3],
-                    "close": row[4],
-                    "volume": row[5],
+            candles = [
+                {
+                    "open": row[1], "high": row[2], "low": row[3],
+                    "close": row[4], "volume": row[5],
                     "timestamp": self.exchange.iso8601(row[0]),
-                })
-
+                }
+                for row in ohlcv
+            ]
             logger.info("ccxt candles fetched", symbol=formatted_symbol,
                         timeframe=tf, count=len(candles))
             return candles
 
         except Exception as e:
-            logger.error("ccxt candle fetch failed", error=str(e), symbol=symbol)
+            logger.error("ccxt candle fetch failed after retries", error=str(e), symbol=symbol)
             return []
 
     async def fetch_tick(self, symbol: str) -> dict:
         formatted_symbol = self._format_symbol(symbol)
 
+        async def _fetch():
+            return await self.exchange.fetch_ticker(formatted_symbol)
+
         try:
-            ticker = await self.exchange.fetch_ticker(formatted_symbol)
+            ticker = await binance_breaker.call(with_retry, _fetch, retries=3, delay=0.5, label=f"ccxt_tick:{formatted_symbol}")
             return {
                 "bid": ticker.get("bid", 0),
                 "ask": ticker.get("ask", 0),
                 "timestamp": ticker.get("datetime", ""),
             }
         except Exception as e:
-            logger.error("ccxt tick fetch failed", error=str(e), symbol=symbol)
+            logger.error("ccxt tick fetch failed after retries", error=str(e), symbol=symbol)
             return {}
 
     async def close(self):

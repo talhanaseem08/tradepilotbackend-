@@ -1,9 +1,12 @@
 import asyncio
 import json
 from app.config.redis import get_redis
+from app.config.database import get_db
 from app.config.settings import settings
 from app.services.deepseek_service import analyze_and_suggest
+from app.services.ppo_service import build_trade_stats, suggest_parameters_async, PARAM_BOUNDS
 from app.schemas.reason import ReasonRequest
+from app.models.optimization_log import create_optimization_log
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -25,6 +28,37 @@ async def _ensure_stream_group():
         )
     except Exception:
         pass
+
+
+async def _blend_params(
+    bot_type: str,
+    deepseek_params: dict,
+    current_params: dict,
+    recent_trades: list[dict],
+    consecutive_losses: int,
+) -> dict:
+    """
+    Blend DeepSeek suggestions (60%) with PPO suggestions (40%).
+    PPO only covers the 3 managed keys per bot type; remaining keys come from DeepSeek.
+    Falls back to pure DeepSeek if no PPO model exists yet.
+    """
+    trade_stats = build_trade_stats(recent_trades)
+    trade_stats["consecutive_losses"] = consecutive_losses
+
+    ppo_params = await suggest_parameters_async(bot_type, current_params, trade_stats)
+
+    if not ppo_params:
+        return deepseek_params
+
+    blended = dict(deepseek_params)
+    for key in PARAM_BOUNDS.get(bot_type, {}):
+        if key in deepseek_params and key in ppo_params:
+            blended[key] = round(
+                float(deepseek_params[key]) * 0.6 + float(ppo_params[key]) * 0.4, 6
+            )
+
+    logger.info("ppo blending applied", bot_type=bot_type, blended_keys=list(ppo_params))
+    return blended
 
 
 async def _process_trigger(data: dict):
@@ -49,12 +83,35 @@ async def _process_trigger(data: dict):
     response = await analyze_and_suggest(request)
 
     if response.success:
+        # Blend DeepSeek output with PPO suggestions
+        final_params = await _blend_params(
+            bot_type=request.bot_type,
+            deepseek_params=response.new_parameters,
+            current_params=request.current_parameters,
+            recent_trades=request.recent_trades,
+            consecutive_losses=request.consecutive_losses,
+        )
+
         await redis.xadd(UPDATE_STREAM, {
             "bot_id": bot_id,
-            "new_parameters": json.dumps(response.new_parameters),
+            "new_parameters": json.dumps(final_params),
             "reasoning": response.reasoning,
         })
-        logger.info("bot update published", bot_id=bot_id, params=response.new_parameters)
+        logger.info("bot update published", bot_id=bot_id, params=final_params)
+
+        # Save optimization log to MongoDB
+        db = get_db()
+        if db is not None:
+            log = create_optimization_log(
+                bot_id=bot_id,
+                trigger_event="consecutive_losses_threshold",
+                old_parameters=request.current_parameters,
+                new_parameters=final_params,
+                reasoning=response.reasoning,
+                consecutive_losses=request.consecutive_losses,
+            )
+            await db.optimization_logs.insert_one(log)
+            logger.info("optimization log saved", bot_id=bot_id)
     else:
         logger.error("agent failed - bot stays paused", bot_id=bot_id, reason=response.reasoning)
 

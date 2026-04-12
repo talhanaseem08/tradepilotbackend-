@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     mongo_db_name: str = "tradepilot"
     nlp_service_url: str = "http://localhost:8001"
     broker_mode: str = "paper"
+    execution_interval_seconds: int = 300   # how often the loop runs (5 min)
+    max_open_trades_per_user: int = 3       # cross-bot risk guard
+    paper_initial_balance: float = 10000.0  # starting balance for paper broker
 
     # OANDA
     oanda_api_key: str = ""

@@ -1,5 +1,6 @@
 const { Server } = require("socket.io");
 const logger = require("../utils/logger");
+const { getServicesHealthPayload } = require("./serviceProxy");
 
 let io = null;
 
@@ -13,6 +14,15 @@ function initWebSocket(httpServer) {
 
   io.on("connection", (socket) => {
     logger.info({ message: "WebSocket client connected", socketId: socket.id });
+
+    (async () => {
+      try {
+        const payload = await getServicesHealthPayload();
+        socket.emit("services:health", payload);
+      } catch (err) {
+        logger.error({ message: "Per-socket health emit failed", error: err.message });
+      }
+    })();
 
     socket.on("subscribe:bot", (botId) => {
       socket.join(`bot:${botId}`);

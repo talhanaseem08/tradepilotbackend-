@@ -1,0 +1,403 @@
+{
+    "id": "0fd2204a-d102-4749-8e2f-4160790a2c14",
+    "title": "Database ER diagram (crow's foot)",
+    "product": "lucidchart",
+    "pages": [
+        {
+            "id": "0_0",
+            "title": "Page 1",
+            "index": 0,
+            "items": {
+                "shapes": [
+                    {
+                        "id": "hupiY1~Es-ug",
+                        "class": "ERDEntityBlock3",
+                        "textAreas": [
+                            {
+                                "label": "Name",
+                                "text": "BotInstance"
+                            },
+                            {
+                                "label": "Field1",
+                                "text": "botID"
+                            },
+                            {
+                                "label": "Type1",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field2",
+                                "text": "userID"
+                            },
+                            {
+                                "label": "Type2",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field3",
+                                "text": "strategyType"
+                            },
+                            {
+                                "label": "Type3",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field4",
+                                "text": "assetPair"
+                            },
+                            {
+                                "label": "Type4",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field5",
+                                "text": "status"
+                            },
+                            {
+                                "label": "Type5",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field6",
+                                "text": "CurrentBalance"
+                            },
+                            {
+                                "label": "Type6",
+                                "text": "float"
+                            }
+                        ],
+                        "customData": [],
+                        "linkedData": []
+                    },
+                    {
+                        "id": "bnqitPq5YZ-n",
+                        "class": "ERDEntityBlock3",
+                        "textAreas": [
+                            {
+                                "label": "Name",
+                                "text": "OptimizationLog(AI Agent)"
+                            },
+                            {
+                                "label": "Field1",
+                                "text": "logID"
+                            },
+                            {
+                                "label": "Type1",
+                                "text": "string"
+                            },
+                            {
+                                "label": "Field2",
+                                "text": "botID "
+                            },
+                            {
+                                "label": "Type2",
+                                "text": "string"
+                            },
+                            {
+                                "label": "Field3",
+                                "text": "triggerEvent "
+                            },
+                            {
+                                "label": "Type3",
+                                "text": "string"
+                            },
+                            {
+                                "label": "Field4",
+                                "text": "oldParameters "
+                            },
+                            {
+                                "label": "Type4",
+                                "text": "json"
+                            },
+                            {
+                                "label": "Field5",
+                                "text": "newParameters "
+                            },
+                            {
+                                "label": "Type5",
+                                "text": "json"
+                            }
+                        ],
+                        "customData": [],
+                        "linkedData": [
+                            {
+                                "collectionId": null,
+                                "data": [
+                                    {
+                                        "key": "SpreadsheetRowParentKey",
+                                        "value": "ROW"
+                                    },
+                                    {
+                                        "key": "SpreadsheetColumnParentKey",
+                                        "value": "COLUMN"
+                                    }
+                                ],
+                                "primaryKeyValue": "\"192d0e9f-2f5a-4032-9f03-59bbf1ea5891\""
+                            }
+                        ]
+                    },
+                    {
+                        "id": "4xwL2Tlp1MNU",
+                        "class": "ERDEntityBlock3",
+                        "textAreas": [
+                            {
+                                "label": "Name",
+                                "text": "User"
+                            },
+                            {
+                                "label": "Field1",
+                                "text": "User ID"
+                            },
+                            {
+                                "label": "Type1",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field2",
+                                "text": "email"
+                            },
+                            {
+                                "label": "Type2",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field3",
+                                "text": "password"
+                            },
+                            {
+                                "label": "Type3",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field4",
+                                "text": "createdAt"
+                            },
+                            {
+                                "label": "Type4",
+                                "text": "datetime"
+                            }
+                        ],
+                        "customData": [],
+                        "linkedData": []
+                    },
+                    {
+                        "id": "4xwLGjD9_YE4",
+                        "class": "ERDEntityBlock3",
+                        "textAreas": [
+                            {
+                                "label": "Name",
+                                "text": "TradeRecord"
+                            },
+                            {
+                                "label": "Field1",
+                                "text": "tradeID"
+                            },
+                            {
+                                "label": "Type1",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field2",
+                                "text": "botID"
+                            },
+                            {
+                                "label": "Type2",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field3",
+                                "text": "symbol"
+                            },
+                            {
+                                "label": "Type3",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field4",
+                                "text": "action"
+                            },
+                            {
+                                "label": "Type4",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field5",
+                                "text": "entryPrice"
+                            },
+                            {
+                                "label": "Type5",
+                                "text": "float"
+                            },
+                            {
+                                "label": "Field6",
+                                "text": "exitPrice"
+                            },
+                            {
+                                "label": "Type6",
+                                "text": "float"
+                            },
+                            {
+                                "label": "Field7",
+                                "text": "volume"
+                            },
+                            {
+                                "label": "Type7",
+                                "text": "float"
+                            },
+                            {
+                                "label": "Field8",
+                                "text": "pnl"
+                            },
+                            {
+                                "label": "Type8",
+                                "text": "float"
+                            },
+                            {
+                                "label": "Field9",
+                                "text": "timestamp"
+                            },
+                            {
+                                "label": "Type9",
+                                "text": "datetime"
+                            }
+                        ],
+                        "customData": [],
+                        "linkedData": []
+                    },
+                    {
+                        "id": "4xwL7nak7NXS",
+                        "class": "ERDEntityBlock3",
+                        "textAreas": [
+                            {
+                                "label": "Name",
+                                "text": "BrokerAccount"
+                            },
+                            {
+                                "label": "Field1",
+                                "text": "accountID"
+                            },
+                            {
+                                "label": "Type1",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field2",
+                                "text": "userID"
+                            },
+                            {
+                                "label": "Type2",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field3",
+                                "text": "brokerName"
+                            },
+                            {
+                                "label": "Type3",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field4",
+                                "text": "apiKey"
+                            },
+                            {
+                                "label": "Type4",
+                                "text": "String"
+                            },
+                            {
+                                "label": "Field5",
+                                "text": "secretKey"
+                            },
+                            {
+                                "label": "Type5",
+                                "text": "String"
+                            }
+                        ],
+                        "customData": [],
+                        "linkedData": []
+                    }
+                ],
+                "lines": [
+                    {
+                        "id": "H3pipwBgRtzh",
+                        "endpoint1": {
+                            "style": "CFN ERD One Arrow",
+                            "connectedTo": "hupiY1~Es-ug"
+                        },
+                        "endpoint2": {
+                            "style": "CFN ERD Many Arrow",
+                            "connectedTo": "4xwLGjD9_YE4"
+                        },
+                        "textAreas": [],
+                        "customData": [],
+                        "linkedData": []
+                    },
+                    {
+                        "id": "1QpiFd55sFmM",
+                        "endpoint1": {
+                            "style": "CFN ERD One Arrow",
+                            "connectedTo": "4xwL2Tlp1MNU"
+                        },
+                        "endpoint2": {
+                            "style": "CFN ERD Many Arrow",
+                            "connectedTo": "4xwL7nak7NXS"
+                        },
+                        "textAreas": [],
+                        "customData": [],
+                        "linkedData": []
+                    },
+                    {
+                        "id": "csqim3jz7UlQ",
+                        "endpoint1": {
+                            "style": "CFN ERD One Arrow",
+                            "connectedTo": "bnqitPq5YZ-n"
+                        },
+                        "endpoint2": {
+                            "style": "CFN ERD Many Arrow",
+                            "connectedTo": "hupiY1~Es-ug"
+                        },
+                        "textAreas": [],
+                        "customData": [],
+                        "linkedData": []
+                    },
+                    {
+                        "id": "SRpi0JXaNGFI",
+                        "endpoint1": {
+                            "style": "CFN ERD Exactly One Arrow",
+                            "connectedTo": "4xwL2Tlp1MNU"
+                        },
+                        "endpoint2": {
+                            "style": "CFN ERD Many Arrow",
+                            "connectedTo": "hupiY1~Es-ug"
+                        },
+                        "textAreas": [],
+                        "customData": [],
+                        "linkedData": []
+                    },
+                    {
+                        "id": "gVpijxd1sr7~",
+                        "endpoint1": {
+                            "style": "CFN ERD Exactly One Arrow",
+                            "connectedTo": "4xwL7nak7NXS"
+                        },
+                        "endpoint2": {
+                            "style": "CFN ERD Exactly One Arrow",
+                            "connectedTo": "hupiY1~Es-ug"
+                        },
+                        "textAreas": [],
+                        "customData": [],
+                        "linkedData": []
+                    }
+                ],
+                "groups": [],
+                "layers": []
+            },
+            "customData": [],
+            "linkedData": []
+        }
+    ],
+    "data": {
+        "collections": []
+    },
+    "accountId": 181498171
+}

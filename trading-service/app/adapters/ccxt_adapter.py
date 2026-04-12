@@ -32,17 +32,40 @@ class CCXTBrokerAdapter(BrokerAdapter):
                     formatted, "limit", side, quantity, price
                 )
 
+            fill_price = order.get("average") or order.get("price", 0)
+            order_id = order.get("id")
+
             result = {
-                "order_id": order.get("id"),
+                "order_id": order_id,
                 "symbol": symbol,
                 "side": side,
                 "quantity": quantity,
-                "entry_price": order.get("average") or order.get("price", 0),
+                "entry_price": fill_price,
                 "status": order.get("status", "open"),
             }
 
-            logger.info("ccxt order placed", order_id=result["order_id"],
-                        symbol=formatted, side=side)
+            logger.info("ccxt order placed", order_id=order_id, symbol=formatted, side=side)
+
+            # Place OCO (stop-loss + take-profit) on the closing side
+            if stop_loss and take_profit and fill_price:
+                close_side = "sell" if side == "buy" else "buy"
+                try:
+                    oco = await self.exchange.privatePostOrderOco({
+                        "symbol": formatted.replace("/", ""),
+                        "side": close_side.upper(),
+                        "quantity": str(quantity),
+                        "price": str(take_profit),
+                        "stopPrice": str(stop_loss),
+                        "stopLimitPrice": str(stop_loss),
+                        "stopLimitTimeInForce": "GTC",
+                    })
+                    result["oco_order_id"] = oco.get("orderListId")
+                    logger.info("ccxt OCO placed", oco_id=result["oco_order_id"],
+                                sl=stop_loss, tp=take_profit)
+                except Exception as oco_err:
+                    logger.warning("ccxt OCO failed (main order still placed)",
+                                   error=str(oco_err), symbol=symbol)
+
             return result
 
         except Exception as e:
