@@ -1,4 +1,5 @@
-import navbarLogo from "@/assets/images/brand/navbarlogo_1.svg"
+import darkLogo from "@/assets/images/footer-logo.svg"
+import lightLogo from "@/assets/images/navbarlogo-black.svg"
 import { cn } from "@/lib/utils"
 
 type ThemeLogoProps = {
@@ -7,16 +8,28 @@ type ThemeLogoProps = {
 
 function ThemeLogo({ className }: ThemeLogoProps) {
   return (
-    <img
-      src={navbarLogo}
-      alt="TradePilot"
-      width={168}
-      height={40}
-      className={cn(
-        "h-10 w-auto max-w-[200px] object-contain object-left",
-        className
-      )}
-    />
+    <>
+      <img
+        src={lightLogo}
+        alt="TradePilot"
+        width={180}
+        height={42}
+        className={cn(
+          "block h-[42px] w-auto max-w-[180px] object-contain object-left dark:hidden",
+          className
+        )}
+      />
+      <img
+        src={darkLogo}
+        alt="TradePilot"
+        width={180}
+        height={42}
+        className={cn(
+          "hidden h-[42px] w-auto max-w-[180px] object-contain object-left dark:block",
+          className
+        )}
+      />
+    </>
   )
 }
 

@@ -7,47 +7,101 @@ const { ValidationError } = require("../utils/errors");
 
 const router = Router();
 
-// GET /api/users/me
 router.get("/me", authenticate, async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id).select("-passwordHash");
-    if (!user) return res.status(404).json({ error: "User not found" });
-    res.json({ user });
-  } catch (err) { next(err); }
+    const user = await User.findById(req.user.id).select(
+      "email role apiKey createdAt updatedAt"
+    );
+
+    if (!user) {
+      throw new ValidationError("User not found");
+    }
+
+    res.json({
+      user: {
+        id: String(req.user.id),
+        email: user.email,
+        role: user.role,
+        apiKey: user.apiKey || null,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
-// PUT /api/users/me  — update email or password
 router.put("/me", authenticate, async (req, res, next) => {
   try {
-    const { email, currentPassword, newPassword } = req.body;
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: "User not found" });
-
+    const { email, password } = req.body || {};
     const updates = {};
 
-    if (email) {
-      updates.email = email.toLowerCase().trim();
+    if (email != null) {
+      const normalizedEmail = String(email).trim().toLowerCase();
+      if (!normalizedEmail) {
+        throw new ValidationError("Email cannot be empty");
+      }
+
+      const existing = await User.findOne({
+        email: normalizedEmail,
+        _id: { $ne: req.user.id },
+      });
+      if (existing) {
+        throw new ValidationError("Email already in use");
+      }
+
+      updates.email = normalizedEmail;
     }
 
-    if (newPassword) {
-      if (!currentPassword) throw new ValidationError("currentPassword required to set a new password");
-      const valid = await bcrypt.compare(currentPassword, user.passwordHash);
-      if (!valid) throw new ValidationError("Current password is incorrect");
-      updates.passwordHash = await bcrypt.hash(newPassword, 12);
+    if (password != null) {
+      if (typeof password !== "string" || password.length < 8) {
+        throw new ValidationError("Password must be at least 8 characters");
+      }
+      updates.passwordHash = await bcrypt.hash(password, 12);
     }
 
-    const updated = await User.findByIdAndUpdate(req.user.id, updates, { new: true }).select("-passwordHash");
-    res.json({ user: updated });
-  } catch (err) { next(err); }
+    if (Object.keys(updates).length === 0) {
+      throw new ValidationError("No profile changes provided");
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    ).select("email role apiKey createdAt updatedAt");
+
+    res.json({
+      message: "Profile updated",
+      user: {
+        id: String(req.user.id),
+        email: user.email,
+        role: user.role,
+        apiKey: user.apiKey || null,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
-// POST /api/users/api-key  — generate or rotate API key
 router.post("/api-key", authenticate, async (req, res, next) => {
   try {
-    const apiKey = crypto.randomBytes(32).toString("hex");
-    await User.findByIdAndUpdate(req.user.id, { apiKey });
-    res.json({ apiKey });
-  } catch (err) { next(err); }
+    const apiKey = `tp_${crypto.randomBytes(24).toString("hex")}`;
+
+    await User.findByIdAndUpdate(req.user.id, {
+      $set: { apiKey },
+    });
+
+    res.json({
+      message: "API key rotated",
+      apiKey,
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;

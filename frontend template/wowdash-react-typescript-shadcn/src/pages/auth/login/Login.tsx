@@ -6,10 +6,12 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { useIsSubmitting } from "@/context/isSubmittingContext"
 import {
+  fetchAppEntryStatus,
   getApiErrorMessage,
   loginRequest,
   setSessionToken,
   setSessionUserEmail,
+  setSessionUserId,
 } from "@/lib/auth"
 import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react"
 import { useState } from "react"
@@ -66,8 +68,13 @@ const Login = () => {
 
       setSessionToken(result.data.token)
       setSessionUserEmail(result.data.user.email)
+      setSessionUserId(result.data.user.id)
       toast.success("Signed in successfully.")
-      navigate("/prompt")
+      const entry = await fetchAppEntryStatus()
+      navigate(
+        entry.ok ? entry.data.nextPath : "/dashboard",
+        { replace: true }
+      )
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Sign-in failed.")
     } finally {
@@ -86,12 +93,13 @@ const Login = () => {
       <div className="flex flex-col justify-center px-6 py-8 lg:w-1/2">
         <div className="mx-auto w-full lg:max-w-[464px]">
           <div>
-            <Link to="/dashboard" className="mb-2.5 inline-block max-w-[290px]">
-              <ThemeLogo />
+            <Link to="/dashboard" className="mb-2.5 inline-block max-w-[180px]">
+              <ThemeLogo className="h-[42px] max-w-[180px]" />
             </Link>
-            <h4 className="mb-3">Sign In to your Account</h4>
+            <h4 className="mb-3">Sign in to TradePilot</h4>
             <p className="text-secondary-light mb-8 text-lg">
-              Use your TradePilot gateway email and password.
+              A smarter trading workspace designed to help traders become
+              profitable.
             </p>
           </div>
 
@@ -109,7 +117,7 @@ const Login = () => {
                         type="email"
                         aria-invalid={fieldState.invalid}
                         disabled={isSubmitting}
-                        placeholder="Email"
+                        placeholder="Enter your email"
                         autoComplete="email"
                         className="!shadow-none !ring-0 h-14 rounded-xl border border-neutral-300 bg-neutral-100 ps-13 pe-12 focus:border-primary focus-visible:border-primary dark:border-slate-700 dark:bg-slate-800 dark:focus:border-primary"
                       />
@@ -134,7 +142,7 @@ const Login = () => {
                         type={showPassword ? "text" : "password"}
                         aria-invalid={fieldState.invalid}
                         disabled={isSubmitting}
-                        placeholder="Password"
+                        placeholder="Enter your password"
                         autoComplete="current-password"
                         className="!shadow-none !ring-0 h-14 rounded-xl border border-neutral-300 bg-neutral-100 ps-13 pe-12 focus:border-primary focus-visible:border-primary dark:border-slate-700 dark:bg-slate-800 dark:focus:border-primary"
                       />
@@ -172,7 +180,7 @@ const Login = () => {
                 to="/auth/forgot-password"
                 className="text-primary text-sm font-medium hover:underline"
               >
-                Forgot Password?
+                Forgot password?
               </Link>
             </div>
 
@@ -189,7 +197,7 @@ const Login = () => {
 
             <div className="center-border-horizontal relative mt-8 text-center before:absolute before:start-0 before:top-1/2 before:h-[1px] before:w-full before:-translate-y-1/2 before:bg-neutral-300">
               <span className="bg-background relative z-[2] px-4">
-                Or sign in with
+                Or continue with
               </span>
             </div>
             <SocialLogin />

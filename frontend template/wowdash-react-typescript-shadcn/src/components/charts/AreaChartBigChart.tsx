@@ -1,121 +1,203 @@
-import type { ApexOptions } from "apexcharts";
-import Chart from 'react-apexcharts';
+import type { ApexOptions } from "apexcharts"
+import Chart from "react-apexcharts"
+import { formatAxisCurrency } from "@/lib/chartFormatters"
 
-interface AreaChartBigChartType {
-    chartHeight?: number;
-    chartColor?: string;
+interface AreaChartBigChartProps {
+  chartHeight?: number
+  chartColor?: string
+  /** Series name in legend/tooltip */
+  seriesName?: string
+  /** Y values (e.g. cumulative realized P&L). */
+  data: number[]
+  /** X labels (same length as `data`) — used when `datetimePoints` is omitted. */
+  categories: string[]
+  /**
+   * Prefer this over `data` + `categories` when present — datetime x-axis avoids
+   * duplicate labels when several closes share the same calendar day.
+   */
+  datetimePoints?: { x: number; y: number }[]
+  emptyMessage?: string
 }
 
-const AreaChartBigChart = ({ chartHeight=370, chartColor="#487fff" }: AreaChartBigChartType) => {
-    const chartOptions: ApexOptions = {
-        chart: {
-            type: 'area',
-            width: '100%',
-            height: chartHeight,
-            sparkline: {
-                enabled: false // Remove whitespace
+const AreaChartBigChart = ({
+  chartHeight = 370,
+  chartColor = "#487fff",
+  seriesName = "P&L",
+  data,
+  categories,
+  datetimePoints,
+  emptyMessage = "No data to display.",
+}: AreaChartBigChartProps) => {
+  const dt =
+    datetimePoints && datetimePoints.length > 0
+      ? datetimePoints.length === 1
+        ? [
+            datetimePoints[0],
+            {
+              x: datetimePoints[0].x + 3_600_000,
+              y: datetimePoints[0].y,
             },
-            toolbar: {
-                show: false
-            },
+          ]
+        : datetimePoints
+      : null
+
+  const hasCategoryData =
+    data.length > 0 && categories.length === data.length && !dt
+  const hasData = Boolean(dt?.length || hasCategoryData)
+
+  const chartOptions: ApexOptions = {
+    chart: {
+      type: "area",
+      width: "100%",
+      height: chartHeight,
+      sparkline: {
+        enabled: false,
+      },
+      toolbar: {
+        show: false,
+      },
+    },
+    dataLabels: {
+      enabled: false,
+    },
+    stroke: {
+      curve: "smooth",
+      width: 4,
+      colors: [chartColor],
+      lineCap: "round",
+    },
+    grid: {
+      show: true,
+      borderColor: "#D1D5DB",
+      strokeDashArray: 1,
+      position: "back",
+      xaxis: {
+        lines: {
+          show: false,
         },
-        dataLabels: {
-            enabled: false
+      },
+      yaxis: {
+        lines: {
+          show: true,
         },
-        stroke: {
-            curve: 'smooth',
-            width: 4,
-            colors: [chartColor],
-            lineCap: 'round'
-        },
-        grid: {
+      },
+      padding: {
+        top: -30,
+        right: 8,
+        bottom: dt ? 8 : -10,
+        left: 8,
+      },
+    },
+    fill: {
+      type: "gradient",
+      colors: [chartColor],
+      gradient: {
+        shade: "light",
+        type: "vertical",
+        shadeIntensity: 0.5,
+        gradientToColors: [`${chartColor}00`],
+        inverseColors: false,
+        opacityFrom: 0.6,
+        opacityTo: 0.3,
+        stops: [0, 100],
+      },
+    },
+    markers: {
+      colors: [chartColor],
+      strokeWidth: 3,
+      size: 0,
+      hover: {
+        size: 10,
+      },
+    },
+    xaxis: dt
+      ? {
+          type: "datetime",
+          tickAmount: 6,
+          labels: {
             show: true,
-            borderColor: '#D1D5DB',
-            strokeDashArray: 1,
-            position: 'back',
-            xaxis: {
-                lines: {
-                    show: false
-                }
+            datetimeUTC: false,
+            format: "dd MMM",
+            rotate: -40,
+            rotateAlways: true,
+            hideOverlappingLabels: true,
+            maxHeight: 120,
+            style: {
+              fontSize: "11px",
             },
-            yaxis: {
-                lines: {
-                    show: true
-                }
-            },
-            row: {
-                colors: undefined,
-                opacity: 0.5
-            },
-            column: {
-                colors: undefined,
-                opacity: 0.5
-            },
-            padding: {
-                top: -30,
-                right: 0,
-                bottom: -10,
-                left: 0
-            },
+          },
+          tooltip: {
+            enabled: false,
+          },
+        }
+      : {
+          labels: {
+            show: true,
+            rotate: -45,
+            rotateAlways: categories.length > 8,
+            hideOverlappingLabels: true,
+            maxHeight: 100,
+            style: { fontSize: "11px" },
+          },
+          categories: hasCategoryData ? categories : [],
+          tooltip: {
+            enabled: false,
+          },
         },
-        fill: {
-            type: 'gradient',
-            colors: [chartColor], // Set the starting color (top color) here
-            gradient: {
-                shade: 'light', // Gradient shading type
-                type: 'vertical',  // Gradient direction (vertical)
-                shadeIntensity: 0.5, // Intensity of the gradient shading
-                gradientToColors: [`${chartColor}00`], // Bottom gradient color (with transparency)
-                inverseColors: false, // Do not invert colors
-                opacityFrom: .6, // Starting opacity
-                opacityTo: 0.3,  // Ending opacity
-                stops: [0, 100],
-            },
-        },
-        markers: {
-            colors: [chartColor],
-            strokeWidth: 3,
-            size: 0,
-            hover: {
-                size: 10
-            }
-        },
-        xaxis: {
-            labels: {
-                show: true
-            },
-            categories: [`Jan`, `Feb`, `Mar`, `Apr`, `May`, `Jun`, `Jul`, `Aug`, `Sep`, `Oct`, `Nov`, `Dec`],
-            tooltip: {
-                enabled: false,
-            },
-        },
-        yaxis: {
-            labels: {
-                show: false
-            },
-        },
-        tooltip: {
-            x: {
-                format: 'dd/MM/yy HH:mm'
-            },
-        },
-    };
+    yaxis: {
+      labels: {
+        show: true,
+        formatter: (val: number) => formatAxisCurrency(val),
+      },
+      decimalsInFloat: 2,
+    },
+    tooltip: {
+      x: dt
+        ? {
+            format: "dd MMM yyyy HH:mm",
+          }
+        : undefined,
+      y: {
+        formatter: (val: number) =>
+          new Intl.NumberFormat(undefined, {
+            style: "currency",
+            currency: "USD",
+            maximumFractionDigits: 2,
+          }).format(val),
+      },
+    },
+  }
 
-    const chartSeries = [
-        {
-            name: 'This Day',
-            data: [18, 25, 20, 35, 25, 55, 45, 50, 40],
-        },
-    ]
+  const chartSeries = [
+    {
+      name: seriesName,
+      data: dt
+        ? dt.map((p) => ({ x: p.x, y: p.y }))
+        : hasCategoryData
+          ? data
+          : [],
+    },
+  ]
 
+  if (!hasData) {
     return (
-        <Chart
-            options={chartOptions}
-            series={chartSeries}
-            type="area"
-            height={chartHeight}
-        />
-    );
-};
+      <div
+        className="flex items-center justify-center text-sm text-muted-foreground px-4"
+        style={{ minHeight: chartHeight }}
+      >
+        {emptyMessage}
+      </div>
+    )
+  }
 
-export default AreaChartBigChart;
+  return (
+    <Chart
+      options={chartOptions}
+      series={chartSeries}
+      type="area"
+      height={chartHeight}
+    />
+  )
+}
+
+export default AreaChartBigChart

@@ -1,5 +1,7 @@
 # React + TypeScript + Vite
 
+**Theme & design system (tokens, dark mode, integration):** see **[docs/THEME.md](./docs/THEME.md)**.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

@@ -1,5 +1,7 @@
 import ForgotPassword from "@/pages/auth/forgot-password/ForgotPassword";
 import Login from "@/pages/auth/login/Login";
+import OnboardingProfileQuestion from "@/pages/auth/onboarding/OnboardingProfileQuestion";
+import WelcomeOnboarding from "@/pages/auth/onboarding/WelcomeOnboarding";
 import Register from "@/pages/auth/register/Register";
 import ResetPassword from "@/pages/auth/reset-password/ResetPassword";
 import BasicTable from "@/pages/basic-table/BasicTable";
@@ -32,31 +34,36 @@ import InputLayout from "@/pages/forms/input-layout/InputLayout";
 import Company from "@/pages/setting/company/Company";
 import NotificationAlert from "@/pages/setting/notification-alert/NotificationAlert";
 import SettingsNotification from "@/pages/setting/settings-notification/SettingsNotification";
+import MyBots from "@/pages/my-bots/MyBots";
 import UsersGrid from "@/pages/users/users-grid/UsersGrid";
 import UsersList from "@/pages/users/UsersList";
 import ViewProfile from "@/pages/users/view-profile/ViewProfile";
-import Widgets from "@/pages/widgets/Widgets";
 import Prompt from "@/pages/prompt/Prompt";
+import TradeJournal from "@/pages/trade-journal/TradeJournal";
+import Analytics from "@/pages/analytics/Analytics";
+import AppEntryRedirect from "@/routes/AppEntryRedirect";
 import { lazy } from "react";
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, useParams } from "react-router-dom";
 import NotFound from '../error/404';
 import RouteErrorBoundary from "../error/RouteErrorBoundary";
 import MainLayout from "../layouts/MainLayout";
 import Typography from './../pages/components-pages/typography/Typography';
 import GuestRoutes from "./GuestRoutes";
 import ProtectedRoutes from "./ProtectedRoutes";
-const Booking = lazy(() => import("@/pages/dashboards/booking/Booking"));
 const Finance = lazy(() => import("@/pages/dashboards/finance/Finance"));
-const Analytics = lazy(() => import("@/pages/dashboards/analytics/Analytics"));
-const Cryptocurrency = lazy(() => import("@/pages/dashboards/cryptocurrency/Cryptocurrency"));
-const Inventory = lazy(() => import("@/pages/dashboards/inventory/Inventory"));
-const Investment = lazy(() => import("@/pages/dashboards/investment/Investment"));
-const Lms = lazy(() => import("@/pages/dashboards/lms/Lms"));
-const Medical = lazy(() => import("@/pages/dashboards/medical/Medical"));
-const Nft = lazy(() => import("@/pages/dashboards/nft/Nft"));
-const Crm = lazy(() => import("../pages/dashboards/crm/Crm"));
-const Ecommerce = lazy(() => import("../pages/dashboards/ecommerce/Ecommerce"));
-const AiDashboard = lazy(() => import("../pages/dashboards/dashboard/AiDashboard"));
+const BotBacktest = lazy(() => import("@/pages/backtest/BotBacktest"));
+const News = lazy(() => import("@/pages/news/News"));
+
+function LegacyOnboardingQuestionRedirect() {
+  const { legacyStep } = useParams()
+  const match = legacyStep?.match(/^question-(\d+)$/)
+
+  if (match) {
+    return <Navigate to={`/welcome/profile/question/${match[1]}`} replace />
+  }
+
+  return <Navigate to="/welcome/profile/question/1" replace />
+}
 
 export const router = createBrowserRouter([
   {
@@ -86,8 +93,24 @@ export const router = createBrowserRouter([
     element: <ProtectedRoutes />,
     children: [
       {
+        path: "/app-entry",
+        element: <AppEntryRedirect />,
+      },
+      {
         path: "/prompt",
         element: <Prompt />,
+      },
+      {
+        path: "/welcome",
+        element: <WelcomeOnboarding />,
+      },
+      {
+        path: "/welcome/profile/question/:step",
+        element: <OnboardingProfileQuestion />,
+      },
+      {
+        path: "/welcome/profile/:legacyStep",
+        element: <LegacyOnboardingQuestionRedirect />,
       },
       {
         path: "/",
@@ -96,43 +119,25 @@ export const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: <Navigate to="/prompt" replace />,
+            element: <Navigate to="/app-entry" replace />,
           },
           {
-            path: "/dashboard", element: <AiDashboard />
+            path: "/dashboard", element: <Finance />
           },
           {
-            path: "crm", element: <Crm />
+            path: "/my-bots", element: <MyBots />
           },
           {
-            path: "ecommerce", element: <Ecommerce />
-          },
-          {
-            path: "cryptocurrency", element: <Cryptocurrency />
-          },
-          {
-            path: "investment", element: <Investment />
-          },
-          {
-            path: "lms", element: <Lms />
-          },
-          {
-            path: "nft", element: <Nft />
-          },
-          {
-            path: "medical", element: <Medical />
+            path: "trade-journal", element: <TradeJournal />
           },
           {
             path: "analytics", element: <Analytics />
           },
           {
-            path: "inventory", element: <Inventory />
+            path: "backtest", element: <BotBacktest />
           },
           {
-            path: "finance", element: <Finance />
-          },
-          {
-            path: "booking", element: <Booking />
+            path: "news", element: <News />
           },
           {
             path: "email", element: <Email />
@@ -217,9 +222,6 @@ export const router = createBrowserRouter([
           },
           {
             path: "pie-chart", element: <PieChartPage />
-          },
-          {
-            path: "widgets", element: <Widgets />
           },
           {
             path: "basic-table", element: <BasicTable />

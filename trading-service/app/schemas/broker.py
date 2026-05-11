@@ -13,6 +13,12 @@ class OandaVerifyRequest(BaseModel):
     environment: str = "practice"
 
 
+class BinanceVerifyRequest(BaseModel):
+    apiKey: str
+    secretKey: str
+    isTestnet: bool = True
+
+
 class VerifyResponse(BaseModel):
     success: bool
     error: str = None

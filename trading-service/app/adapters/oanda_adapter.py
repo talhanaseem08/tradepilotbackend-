@@ -9,6 +9,7 @@ import httpx
 from app.adapters.broker_adapter import BrokerAdapter
 from app.config.settings import settings
 from app.core.circuit_breaker import oanda_breaker
+from app.services.broker_credentials import UserBrokerCredentials
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -23,11 +24,14 @@ def _format_instrument(symbol: str) -> str:
 
 
 class OandaBrokerAdapter(BrokerAdapter):
-    def __init__(self):
-        self.base_url = settings.oanda_base_url
-        self.account_id = settings.oanda_account_id
+    def __init__(self, credentials: UserBrokerCredentials | None = None):
+        self.api_key = credentials.api_key if credentials else settings.oanda_api_key
+        self.base_url = (
+            credentials.oanda_base_url if credentials else settings.oanda_base_url
+        )
+        self.account_id = credentials.account_id if credentials else settings.oanda_account_id
         self.headers = {
-            "Authorization": f"Bearer {settings.oanda_api_key}",
+            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
 

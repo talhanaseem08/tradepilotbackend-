@@ -155,6 +155,68 @@ async function setupOandaAccount(req, res, next) {
   }
 }
 
+async function setupBinanceAccount(req, res, next) {
+  try {
+    const { apiKey, secretKey, isTestnet = true } = req.body;
+
+    if (!apiKey || !secretKey) {
+      throw new ValidationError("Binance API key and secret key are required");
+    }
+
+    const verifyResult = await proxyRequest(
+      "trading",
+      "POST",
+      "/broker/verify/binance",
+      {
+        apiKey,
+        secretKey,
+        isTestnet,
+      },
+      req.correlationId
+    );
+
+    if (!verifyResult.success) {
+      return res.status(400).json({
+        error: "Failed to connect to Binance account",
+        details: verifyResult.error,
+      });
+    }
+
+    await BrokerAccount.findOneAndUpdate(
+      { userID: req.user.id, brokerName: "binance" },
+      {
+        userID: req.user.id,
+        brokerName: "binance",
+        apiKey: encrypt(apiKey),
+        secretKey: encrypt(secretKey),
+        isTestnet: !!isTestnet,
+        isVerified: true,
+        lastVerified: new Date(),
+      },
+      { upsert: true, new: true }
+    );
+
+    logger.info({
+      message: "Binance account setup successful",
+      userId: req.user.id,
+      isTestnet: !!isTestnet,
+      correlationId: req.correlationId,
+    });
+
+    res.json({
+      success: true,
+      message: "Binance account connected successfully",
+      accountInfo: {
+        isTestnet: !!isTestnet,
+        balance: verifyResult.balance,
+        currency: verifyResult.currency || "USDT",
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function verifyBrokerConnection(req, res, next) {
   try {
     const { brokerType } = req.params;
@@ -185,6 +247,17 @@ async function verifyBrokerConnection(req, res, next) {
         apiKey,
         accountId: account.accountId,
         environment: account.environment,
+      }, req.correlationId);
+    } else if (brokerType === "binance") {
+      const apiKey = decrypt(account.apiKey);
+      const secretKey = decrypt(account.secretKey);
+      if (!apiKey || !secretKey) {
+        return res.status(500).json({ error: "Failed to decrypt Binance credentials" });
+      }
+      verifyResult = await proxyRequest("trading", "POST", "/broker/verify/binance", {
+        apiKey,
+        secretKey,
+        isTestnet: !!account.isTestnet,
       }, req.correlationId);
     }
 
@@ -228,6 +301,7 @@ async function getBrokerAccounts(req, res, next) {
 module.exports = {
   setupMT5Account,
   setupOandaAccount,
+  setupBinanceAccount,
   verifyBrokerConnection,
   getBrokerAccounts,
 };

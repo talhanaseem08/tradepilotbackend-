@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.config.redis import get_redis, close_redis
 from app.config.database import connect_mongo, close_mongo
 from app.config.indexes import create_indexes
+from app.core.agent_client import agent_client
 from app.core.nlp_client import nlp_client
 from app.workers.update_worker import start_update_worker, stop_update_worker
 from app.workers.execution_worker import start_execution_worker, stop_execution_worker
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
     stop_ingestion_worker()
     stop_execution_worker()
     stop_update_worker()
+    await agent_client.close()
     await nlp_client.close()
     await close_redis()
     await close_mongo()

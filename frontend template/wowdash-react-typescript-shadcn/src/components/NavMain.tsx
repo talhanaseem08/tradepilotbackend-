@@ -34,6 +34,11 @@ export function NavMain({ items }: { items: SidebarItem[] }) {
   const location = useLocation();
   const pathname = location.pathname;
 
+  const matchesPath = (target?: string) => {
+    if (!target) return false;
+    return pathname === target || pathname.startsWith(`${target}/`);
+  };
+
   // State: which dropdown is open
   const [openGroup, setOpenGroup] = useState<string | null>(null);
 
@@ -47,7 +52,7 @@ export function NavMain({ items }: { items: SidebarItem[] }) {
   const isDropdownActive = (item: SidebarItem) => {
     if (!item.items) return false;
     return item.items.some(
-      (sub) => sub.url && (pathname === sub.url || pathname.startsWith(sub.url))
+      (sub) => matchesPath(sub.url)
     );
   };
 
@@ -92,9 +97,7 @@ export function NavMain({ items }: { items: SidebarItem[] }) {
                       <SidebarMenuSub className="mt-2 ms-6 space-y-1">
                         {item.items.map((subItem) => {
                           if (!subItem.url) return null;
-                          const isSubActive =
-                            pathname === subItem.url ||
-                            pathname.startsWith(subItem.url);
+                          const isSubActive = matchesPath(subItem.url);
 
                           return (
                             <SidebarMenuSubItem key={subItem.title}>
@@ -142,8 +145,7 @@ export function NavMain({ items }: { items: SidebarItem[] }) {
 
           // Top-level single page
           if (item.url && item.title) {
-            const isMenuActive =
-              pathname === item.url || pathname.startsWith(item.url);
+            const isMenuActive = matchesPath(item.url);
 
             return (
               <SidebarMenuItem key={item.title}>

@@ -4,7 +4,7 @@ import { Navigate, Outlet } from "react-router-dom"
 /** Auth pages: redirect to app when a gateway JWT is already stored. */
 const GuestRoutes = () => {
   if (getSessionToken()) {
-    return <Navigate to="/prompt" replace />
+    return <Navigate to="/app-entry" replace />
   }
 
   return <Outlet />

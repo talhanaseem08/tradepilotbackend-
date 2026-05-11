@@ -1,6 +1,9 @@
+from pydantic import BaseModel, Field
+
 from fastapi import APIRouter, HTTPException
 from app.schemas.backtest import BacktestRequest, BacktestResult
 from app.services.backtesting import run_backtest
+from app.services.scripted_backtest_runner import run_script_style_backtest
 from app.models.backtest_report import create_backtest_report
 from app.config.database import get_db
 from app.utils.logger import get_logger
@@ -48,6 +51,43 @@ async def backtest(request: BacktestRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Backtest failed: {str(e)}")
+
+
+class ScriptBacktestRunRequest(BaseModel):
+    """Same behaviour as scripts/backtest_*_*.py (OANDA range + run_backtest)."""
+
+    bot_type: str = Field(
+        ...,
+        description="Forex: low_risk | medium_risk | high_risk. Crypto: crypto_low | crypto_medium | crypto_high.",
+    )
+    days: int = Field(30, ge=1, le=365)
+    symbol: str | None = Field(
+        None,
+        description="Optional; high_risk only: USDCHF or UK100 (default USDCHF).",
+    )
+    user_id: str | None = Field(
+        None,
+        description="Authenticated user id for connected broker credential lookup.",
+    )
+
+
+@router.post("/backtest/script-run", response_model=BacktestResult)
+async def backtest_script_run(body: ScriptBacktestRunRequest):
+    """
+    Run the long-range script backtest for the selected bot (matches CLI scripts).
+    """
+    try:
+        return await run_script_style_backtest(
+            body.bot_type,
+            days=body.days,
+            symbol=body.symbol,
+            user_id=body.user_id,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("script-run backtest failed", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Script backtest failed: {e!s}") from e
 
 
 @router.get("/backtest/reports")

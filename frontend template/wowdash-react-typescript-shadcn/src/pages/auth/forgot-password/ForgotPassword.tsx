@@ -77,11 +77,11 @@ const ForgotPassword = () => {
             <div className="lg:w-1/2 py-8 px-6 flex flex-col justify-center">
                 <div className="lg:max-w-[464px] mx-auto w-full">
                     <div>
-                        <Link to="/dashboard" className="mb-2.5 max-w-[290px] inline-block">
-                            <ThemeLogo />
+                        <Link to="/dashboard" className="mb-2.5 inline-block max-w-[180px]">
+                            <ThemeLogo className="h-[42px] max-w-[180px]" />
                         </Link>
-                        <h4 className="mb-3"> Forgot Password </h4>
-                        <p className="mb-8 text-secondary-light text-lg">Enter the email address associated with your account and we will send you a link to reset your password.</p>
+                        <h4 className="mb-3">Reset your password</h4>
+                        <p className="mb-8 text-secondary-light text-lg">Enter the email linked to your TradePilot account and we&rsquo;ll send you a secure reset link.</p>
                     </div>
 
 
@@ -100,7 +100,7 @@ const ForgotPassword = () => {
                                                 type="email"
                                                 aria-invalid={fieldState.invalid}
                                                 disabled={isSubmitting}
-                                                placeholder="Email"
+                                                placeholder="Enter your email"
                                                 name="email"
                                                 autoComplete="email"
                                                 className="ps-13 pe-12 h-14 rounded-xl bg-neutral-100 dark:bg-slate-800 border border-neutral-300 dark:border-slate-700 focus:border-primary dark:focus:border-primary focus-visible:border-primary !shadow-none !ring-0"
@@ -120,11 +120,11 @@ const ForgotPassword = () => {
                             disabled={isSubmitting}
                         >
                             {isSubmitting && <Loader2 className="animate-spin h-4.5 w-4.5 mr-2" />}
-                            {isSubmitting ? "Sending Recovery Email..." : "Send Recovery Email"}
+                            {isSubmitting ? "Sending reset link..." : "Send reset link"}
                         </Button>
 
                         <div className="mt-8 text-center text-sm">
-                            <p className="mb-0"> Remembered your password? {" "} <Link to="/auth/login" className="text-primary font-semibold hover:underline">Back to Sign In</Link></p>
+                            <p className="mb-0">Remembered your password?{" "} <Link to="/auth/login" className="text-primary font-semibold hover:underline">Back to Sign In</Link></p>
                         </div>
                     </form>
                 </div>

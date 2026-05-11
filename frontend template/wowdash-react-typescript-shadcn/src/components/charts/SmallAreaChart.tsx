@@ -1,129 +1,125 @@
-import type { ApexOptions } from "apexcharts";
-import Chart from 'react-apexcharts';
+import type { ApexOptions } from "apexcharts"
+import Chart from "react-apexcharts"
+import { padSeriesMin2 } from "@/lib/dashboardSeries"
 
-interface ChartColorType {
-    chartColor?: string;
-    chartWidth?: number;
-    chartHeight?: number;
+interface SmallAreaChartProps {
+  /** Y values from real metrics (account path, cumulative P&L, etc.). */
+  data: number[]
+  chartColor?: string
+  chartWidth?: number
+  chartHeight?: number
 }
 
+const SmallAreaChart = ({
+  data,
+  chartColor = "#487fff",
+  chartWidth = 80,
+  chartHeight = 42,
+}: SmallAreaChartProps) => {
+  const points = padSeriesMin2(data)
 
-const SmallAreaChart = ({ chartColor = "#487fff", chartWidth = 80, chartHeight = 42 }: ChartColorType) => {
+  const chartOptions: ApexOptions = {
+    chart: {
+      type: "area",
+      width: chartWidth,
+      height: chartHeight,
+      sparkline: {
+        enabled: true,
+      },
+      toolbar: {
+        show: false,
+      },
+    },
+    dataLabels: {
+      enabled: false,
+    },
+    stroke: {
+      curve: "smooth",
+      width: 2,
+      colors: [chartColor],
+      lineCap: "round",
+    },
+    grid: {
+      show: true,
+      borderColor: "transparent",
+      strokeDashArray: 0,
+      position: "back",
+      xaxis: {
+        lines: {
+          show: false,
+        },
+      },
+      yaxis: {
+        lines: {
+          show: false,
+        },
+      },
+      padding: {
+        top: -3,
+        right: 0,
+        bottom: 0,
+        left: 0,
+      },
+    },
+    fill: {
+      type: "gradient",
+      colors: [chartColor],
+      gradient: {
+        shade: "light",
+        type: "vertical",
+        shadeIntensity: 0.5,
+        gradientToColors: [`${chartColor}00`],
+        inverseColors: false,
+        opacityFrom: 0.75,
+        opacityTo: 0.3,
+        stops: [0, 100],
+      },
+    },
+    markers: {
+      colors: [chartColor],
+      strokeWidth: 2,
+      size: 0,
+      hover: {
+        size: 8,
+      },
+    },
+    xaxis: {
+      labels: {
+        show: false,
+      },
+      categories: points.map((_, i) => String(i)),
+      tooltip: {
+        enabled: false,
+      },
+    },
+    yaxis: {
+      labels: {
+        show: false,
+      },
+    },
+    tooltip: {
+      x: {
+        format: "dd/MM/yy HH:mm",
+      },
+    },
+  }
 
-    const currentYear = new Date().getFullYear();
+  const chartSeries = [
+    {
+      name: "v",
+      data: points,
+    },
+  ]
 
-    const chartOptions: ApexOptions = {
-        chart: {
-            type: 'area',
-            width: chartWidth,
-            height: chartHeight,
-            sparkline: {
-                enabled: true
-            },
+  return (
+    <Chart
+      options={chartOptions}
+      series={chartSeries}
+      type="area"
+      height={chartHeight}
+      width={chartWidth}
+    />
+  )
+}
 
-            toolbar: {
-                show: false
-            },
-        },
-        dataLabels: {
-            enabled: false
-        },
-        stroke: {
-            curve: 'smooth',
-            width: 2,
-            colors: [chartColor],
-            lineCap: 'round'
-        },
-        grid: {
-            show: true,
-            borderColor: 'transparent',
-            strokeDashArray: 0,
-            position: 'back',
-            xaxis: {
-                lines: {
-                    show: false
-                }
-            },
-            yaxis: {
-                lines: {
-                    show: false
-                }
-            },
-            row: {
-                colors: undefined,
-                opacity: 0.5
-            },
-            column: {
-                colors: undefined,
-                opacity: 0.5
-            },
-            padding: {
-                top: -3,
-                right: 0,
-                bottom: 0,
-                left: 0
-            },
-        },
-        fill: {
-            type: 'gradient',
-            colors: [chartColor], // Set the starting color (top color) here
-            gradient: {
-                shade: 'light', // Gradient shading type
-                type: 'vertical',  // Gradient direction (vertical)
-                shadeIntensity: 0.5, // Intensity of the gradient shading
-                gradientToColors: [`${chartColor}00`], // Bottom gradient color (with transparency)
-                inverseColors: false, // Do not invert colors
-                opacityFrom: .75, // Starting opacity
-                opacityTo: 0.3,  // Ending opacity
-                stops: [0, 100],
-            },
-        },
-        // Customize the circle marker color on hover
-        markers: {
-            colors: [chartColor],
-            strokeWidth: 2,
-            size: 0,
-            hover: {
-                size: 8
-            }
-        },
-        xaxis: {
-            labels: {
-                show: false
-            },
-            categories: [`Jan ${currentYear}`, `Feb ${currentYear}`, `Mar ${currentYear}`, `Apr ${currentYear}`, `May ${currentYear}`, `Jun ${currentYear}`, `Jul ${currentYear}`, `Aug ${currentYear}`, `Sep ${currentYear}`, `Oct ${currentYear}`, `Nov ${currentYear}`, `Dec ${currentYear}`],
-            tooltip: {
-                enabled: false,
-            },
-        },
-        yaxis: {
-            labels: {
-                show: false
-            }
-        },
-        tooltip: {
-            x: {
-                format: 'dd/MM/yy HH:mm'
-            },
-        },
-    };
-
-    const chartSeries = [
-        {
-            name: 'series1',
-            data: [35, 45, 38, 41, 36, 43, 37, 55, 40],
-        },
-    ]
-
-    return (
-        <Chart
-            options={chartOptions}
-            series={chartSeries}
-            type="area"
-            height={chartHeight}
-            width={chartWidth}
-        />
-    );
-};
-
-export default SmallAreaChart;
+export default SmallAreaChart

@@ -1,0 +1,13 @@
+"""Entry point: run from repo root or cryptobots with python -m medium_risk.main (see below)."""
+
+import sys
+from pathlib import Path
+
+_root = Path(__file__).resolve().parent.parent
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
+
+from medium_risk.cli.main import main
+
+if __name__ == "__main__":
+    main()

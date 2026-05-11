@@ -4,10 +4,12 @@ Maps NLP parse result → bot type + parameters for automatic bot creation.
 Parse result fields used:
   risk_level    : "low" | "medium" | "high"
   market        : ["forex"] | ["crypto"]  (crypto → crypto_low / crypto_medium / crypto_high)
-  symbol        : defaults EURUSD (forex) or BTCUSDT (crypto) if omitted
+  symbol        : if omitted, defaults per bot (forex: low_risk→USDCHF, medium→EURUSD, high→USDCHF)
   timeframe     : "1h" | "4h" etc.
   stop_loss_pips  : int (optional)
   take_profit_pips: int (optional)
+
+Forex symbols are normalized to what each bot supports (e.g. low_risk ORB only USDCHF; medium BOS only EURUSD).
 """
 from app.utils.logger import get_logger
 
@@ -72,6 +74,46 @@ DEFAULT_TIMEFRAME: dict[str, str] = {
     "crypto": "4h",
 }
 
+# Each bot class only accepts certain symbols (see ALLOWED_SYMBOLS on bot classes).
+_FOREX_SYMBOL_DEFAULTS: dict[str, str] = {
+    "low_risk": "USDCHF",  # LowRiskOrbBot — ORB engine tuned for USDCHF
+    "medium_risk": "EURUSD",  # MediumRiskBosBot — BOS on EURUSD
+    "high_risk": "USDCHF",  # HighRiskOrbBot — USDCHF or UK100; default USDCHF
+}
+
+
+def _normalize_forex_symbol(bot_type: str, symbol: str) -> str:
+    """
+    Map NLP symbol to one the selected bot actually supports.
+    Avoids ValueError e.g. LowRiskOrbBot only trades {USDCHF}, got EURUSD.
+    """
+    s = symbol.upper()
+    if bot_type == "low_risk":
+        if s not in {"USDCHF"}:
+            logger.info(
+                "forex symbol not supported by low_risk ORB; using USDCHF",
+                requested=s,
+            )
+            return "USDCHF"
+        return s
+    if bot_type == "medium_risk":
+        if s not in {"EURUSD"}:
+            logger.info(
+                "forex symbol not supported by medium_risk BOS; using EURUSD",
+                requested=s,
+            )
+            return "EURUSD"
+        return s
+    if bot_type == "high_risk":
+        if s not in {"USDCHF", "UK100"}:
+            logger.info(
+                "forex symbol not supported by high_risk ORB; using USDCHF",
+                requested=s,
+            )
+            return "USDCHF"
+        return s
+    return s
+
 
 def select_bot(parse_result: dict) -> dict:
     """
@@ -93,8 +135,13 @@ def select_bot(parse_result: dict) -> dict:
     else:
         bot_type = FOREX_RISK_MAP.get(risk_raw, "low_risk")
 
-    default_symbol = "BTCUSDT" if market == "crypto" else "EURUSD"
+    if market == "crypto":
+        default_symbol = "BTCUSDT"
+    else:
+        default_symbol = _FOREX_SYMBOL_DEFAULTS.get(bot_type, "EURUSD")
     symbol = (parse_result.get("symbol") or default_symbol).upper()
+    if market != "crypto":
+        symbol = _normalize_forex_symbol(bot_type, symbol)
     timeframe = parse_result.get("timeframe") or DEFAULT_TIMEFRAME.get(market, "1h")
 
     params = dict(DEFAULT_PARAMS[bot_type])

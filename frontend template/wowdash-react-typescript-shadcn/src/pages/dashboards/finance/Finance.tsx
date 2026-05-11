@@ -1,79 +1,122 @@
-import LazyWrapper from "@/components/LazyWrapper";
-import Breadcrumb from "@/layouts/Breadcrumb";
-import { lazy } from "react";
-const StateCards = lazy(() => import("./components/StatisticsCard"))
-const BalanceStatistic = lazy(() => import("./components/BalanceStatistic"))
-const EarningCategories = lazy(() => import("./components/EarningCategories"))
-const ExpenseStatisticsCard = lazy(() => import("./components/ExpenseStatisticsCard"))
-const PaymentHistory = lazy(() => import("./components/PaymentHistory"))
-const MonthlyExpenseBreakdown = lazy(() => import("./components/MonthlyExpenseBreakdown"))
-const QuickTransfer = lazy(() => import("./components/QuickTransfer"))
-const InvestmentCard = lazy(() => import("./components/InvestmentCard"))
-const TransactionHistoryCard = lazy(() => import("./components/TransactionHistoryCard"))
+import LazyWrapper from "@/components/LazyWrapper"
+import Breadcrumb from "@/layouts/Breadcrumb"
+import { Button } from "@/components/ui/button"
+import { useDashboardMarket } from "@/context/DashboardMarketContext"
+import {
+  fetchBots,
+  fetchTrades,
+  triggerBinanceTestExecution,
+  triggerOandaTestExecution,
+  type BotSummary,
+  type TradeRecord,
+} from "@/lib/api"
+import { filterTradesByMarket } from "@/lib/market"
+import { Loader2, Play } from "lucide-react"
+import { lazy, useEffect, useMemo, useState } from "react"
+import { toast } from "react-toastify"
+
+const AccountStatsCards = lazy(() => import("./components/AccountStatsCards"))
+const PerformanceInsightRow = lazy(() => import("./components/PerformanceInsightRow"))
+const TradeActivitySection = lazy(() => import("./components/TradeActivitySection"))
 
 const Finance = () => {
-    return (
-        <>
-            <Breadcrumb title="Finance" text="Finance" />
+  const { activeMarket } = useDashboardMarket()
+  const [trades, setTrades] = useState<TradeRecord[]>([])
+  const [bots, setBots] = useState<BotSummary[]>([])
+  const [execLoading, setExecLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
-            <LazyWrapper>
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-6">
-                    <StateCards />
-                </div>
-            </LazyWrapper>
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    Promise.all([fetchTrades({ limit: 500, page: 1 }), fetchBots()]).then(
+      ([tradesRes, botsRes]) => {
+        if (cancelled) return
+        if (tradesRes.ok) setTrades(tradesRes.data.trades)
+        if (botsRes.ok) setBots(botsRes.data.bots)
+        setLoading(false)
+      }
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
-            <div className="mt-6">
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-6">
-                    <div className="col-span-12 xl:col-span-8">
-                        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                            <div className="col-span-12">
-                                <LazyWrapper>
-                                    <BalanceStatistic />
-                                </LazyWrapper>
-                            </div>
-                            <div className="col-span-12 md:col-span-6">
-                                <LazyWrapper>
-                                    <EarningCategories />
-                                </LazyWrapper>
-                            </div>
-                            <div className="col-span-12 md:col-span-6">
-                                <LazyWrapper>
-                                    <ExpenseStatisticsCard />
-                                </LazyWrapper>
-                            </div>
-                            <div className="col-span-12 md:col-span-6">
-                                <LazyWrapper>
-                                    <PaymentHistory />
-                                </LazyWrapper>
-                            </div>
-                            <div className="col-span-12 md:col-span-6">
-                                <LazyWrapper>
-                                    <MonthlyExpenseBreakdown />
-                                </LazyWrapper>
-                            </div>
-                        </div>
-                    </div>
+  const filteredTrades = useMemo(
+    () => filterTradesByMarket(trades, activeMarket, bots),
+    [activeMarket, bots, trades]
+  )
 
-                    <div className="col-span-12 xl:col-span-4">
-                        <div className="flex flex-col gap-6">
-                            <LazyWrapper>
-                                <QuickTransfer />
-                            </LazyWrapper>
-                            <LazyWrapper>
-                                <InvestmentCard />
-                            </LazyWrapper>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div className="mt-6 lg:block hidden">
-                <LazyWrapper>
-                    <TransactionHistoryCard />
-                </LazyWrapper>
-            </div>
+  async function runExecutionCycle() {
+    setExecLoading(true)
+    const res =
+      activeMarket === "forex"
+        ? await triggerOandaTestExecution()
+        : await triggerBinanceTestExecution()
+    setExecLoading(false)
+    if (res.ok) {
+      toast.success(
+        `${res.data.symbol} test BUY opened on ${res.data.broker.toUpperCase()} ${res.data.environment}. It will auto-close in ${Math.round(
+          res.data.close_in_seconds / 60
+        )} minutes.`
+      )
+      const t = await fetchTrades({ limit: 500, page: 1 })
+      if (t.ok) setTrades(t.data.trades)
+    } else {
+      toast.error(res.message)
+    }
+  }
 
-        </>
-    );
-};
+  return (
+    <>
+      <Breadcrumb title="Dashboard" text="Trading Dashboard" />
 
-export default Finance;
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 dark:border-slate-600 bg-card/50 px-4 py-3">
+        <p className="text-sm text-muted-foreground max-w-2xl">
+          {activeMarket === "forex" ? (
+            <>
+              Open one real <strong>OANDA practice</strong> test trade for your active forex bot and auto-close it after 3 minutes.
+              This is only for checking that real broker execution works.
+            </>
+          ) : (
+            <>
+              Open one real <strong>Binance demo</strong> test trade for your active crypto bot and auto-close it after 3 minutes.
+              This is only for checking that real broker execution works.
+            </>
+          )}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={execLoading}
+          onClick={() => void runExecutionCycle()}
+        >
+          {execLoading ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Play className="size-4" />
+          )}
+          Run execution now
+        </Button>
+      </div>
+
+      {/* Row 1 — Account stat cards */}
+      <LazyWrapper>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-5">
+          <AccountStatsCards trades={filteredTrades} loading={loading} />
+        </div>
+      </LazyWrapper>
+
+      <LazyWrapper>
+        <PerformanceInsightRow trades={filteredTrades} />
+      </LazyWrapper>
+
+      <LazyWrapper>
+        <TradeActivitySection trades={filteredTrades} market={activeMarket} />
+      </LazyWrapper>
+    </>
+  )
+}
+
+export default Finance

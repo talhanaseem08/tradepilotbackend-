@@ -1,0 +1,34 @@
+"""Low-risk bot constants (strategy logic unchanged from original)."""
+
+from pathlib import Path
+
+from common.config import DRY_RUN_DEFAULT, LOW_RISK_REPORT_PDF
+
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+LOG_DIR = PACKAGE_ROOT / "logs"
+
+PAIRS = ["BTC-USD", "ETH-USD", "BNB-USD", "SOL-USD"]
+INITIAL_WALLET = 100_000.0
+RISK_PER_TRADE = 10_000.0
+START_DATE = "2025-04-13"
+END_DATE = "2026-04-13"
+OUTPUT_PDF = LOW_RISK_REPORT_PDF
+STOP_ATR_MULT = 2.0
+TP_ATR_MULT = 5.0
+
+TIMEFRAME = "1d"
+
+LONG_ONLY_OPTIONS = [True, False]
+RSI_ENTRY_LOW_OPTIONS = [45, 48, 50]
+RSI_ENTRY_HIGH_OPTIONS = [62, 65, 68]
+STOP_ATR_OPTIONS = [1.5, 2.0, 2.5]
+TP_ATR_OPTIONS = [3.0, 4.0, 5.0]
+
+DEFAULT_LONG_ONLY = True
+DEFAULT_RSI_LOW = 48
+DEFAULT_RSI_HIGH = 68
+DEFAULT_STOP_ATR = STOP_ATR_MULT
+DEFAULT_TP_ATR = TP_ATR_MULT
+
+EXCEL_LOG_PATH = LOG_DIR / "low_risk_signals.xlsx"
+CANDLE_LIMIT = 500

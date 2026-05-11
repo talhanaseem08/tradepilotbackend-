@@ -1,7 +1,8 @@
-import ccxt.async_support as ccxt
 from app.adapters.data_provider import DataProvider
 from app.config.settings import settings
 from app.core.circuit_breaker import binance_breaker
+from app.services.binance_client import create_binance_exchange
+from app.services.broker_credentials import UserBrokerCredentials
 from app.utils.retry import with_retry
 from app.utils.logger import get_logger
 
@@ -14,13 +15,20 @@ TIMEFRAME_MAP = {
 
 
 class CCXTProvider(DataProvider):
-    def __init__(self):
-        self.exchange = ccxt.binance({
-            "apiKey": settings.binance_api_key,
-            "secret": settings.binance_api_secret,
-            "sandbox": settings.binance_sandbox,
-            "enableRateLimit": True,
-        })
+    def __init__(self, credentials: UserBrokerCredentials | None = None):
+        sandbox = (
+            credentials.is_testnet
+            if credentials and credentials.is_testnet is not None
+            else settings.binance_sandbox
+        )
+        # Public market-data requests do not need API keys. Using an
+        # unauthenticated exchange avoids CCXT touching unsupported demo-mode
+        # private SAPI endpoints while loading markets/currencies.
+        self.exchange = create_binance_exchange(
+            api_key=None,
+            secret_key=None,
+            demo_mode=sandbox,
+        )
 
     async def fetch_candles(self, symbol: str, timeframe: str, count: int = 100) -> list[dict]:
         tf = TIMEFRAME_MAP.get(timeframe, "1h")
@@ -56,9 +64,17 @@ class CCXTProvider(DataProvider):
 
         try:
             ticker = await binance_breaker.call(with_retry, _fetch, retries=3, delay=0.5, label=f"ccxt_tick:{formatted_symbol}")
+            bid = ticker.get("bid", 0) or 0
+            ask = ticker.get("ask", 0) or 0
+            last = ticker.get("last", 0) or 0
+            if not bid and last:
+                bid = last
+            if not ask and last:
+                ask = last
             return {
-                "bid": ticker.get("bid", 0),
-                "ask": ticker.get("ask", 0),
+                "bid": bid,
+                "ask": ask,
+                "last": last,
                 "timestamp": ticker.get("datetime", ""),
             }
         except Exception as e:

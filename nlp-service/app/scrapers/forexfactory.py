@@ -11,8 +11,11 @@ import os
 import time
 import re
 import json
+import shutil
+import asyncio
 import pytz
 import pandas as pd
+from bs4 import BeautifulSoup
 from pathlib import Path
 from datetime import datetime
 from urllib.request import urlopen
@@ -20,6 +23,8 @@ from urllib.request import urlopen
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 from app.scrapers.base_scraper import BaseScraper
@@ -56,10 +61,11 @@ ICON_COLOR_MAP = {
     "icon icon--ff-impact-gra": "gray"
 }
 
-ALLOWED_CURRENCY_CODES = ['CAD', 'EUR', 'GBP', 'USD']
+ALLOWED_CURRENCY_CODES = ['CAD', 'CHF', 'EUR', 'GBP', 'USD']
 ALLOWED_IMPACT_COLORS = ['red', 'orange', 'gray']
 TARGET_TIMEZONE = "Asia/Karachi"
 SCRAPER_TIMEZONE = None
+_SCRAPE_TASK: asyncio.Task | None = None
 
 # News data directory
 NEWS_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "news"
@@ -109,6 +115,7 @@ def reformat_data(data: list, year: str) -> list:
     current_time = ''
     current_day = ''
     structured_rows = []
+    scraper_timezone = SCRAPER_TIMEZONE or find_location_timezone()
 
     for row in data:
         new_row = row.copy()
@@ -131,7 +138,6 @@ def reformat_data(data: list, year: str) -> list:
         new_row["day"] = current_day
         new_row["date"] = current_date
 
-        scraper_timezone = find_location_timezone()
         if scraper_timezone and TARGET_TIMEZONE:
             new_row["time"] = convert_time_zone(current_date, current_time, scraper_timezone, TARGET_TIMEZONE)
         else:
@@ -185,6 +191,9 @@ def convert_time_zone(date_str, time_str, from_zone_str, to_zone_str):
     if time_str.lower() in ["all day", "tentative"]:
         return time_str
 
+    if not re.fullmatch(r"\d{1,2}:\d{2}(am|pm)", time_str.strip(), flags=re.IGNORECASE):
+        return time_str
+
     try:
         from_zone = pytz.timezone(from_zone_str)
         to_zone = pytz.timezone(to_zone_str)
@@ -214,19 +223,36 @@ def find_location_timezone():
 def init_driver(headless=True) -> webdriver.Chrome:
     options = webdriver.ChromeOptions()
     if headless:
-        options.add_argument("--headless")
+        options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disable-extensions")
     options.add_argument("window-size=1920x1080")
     options.add_argument(
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     )
 
-    logger.info("Attempting to initialize WebDriver with ChromeDriverManager...")
-    service = Service(ChromeDriverManager().install())
+    chrome_bin = (
+        os.getenv("CHROME_BIN")
+        or shutil.which("chromium")
+        or shutil.which("chromium-browser")
+        or shutil.which("google-chrome")
+    )
+    if chrome_bin:
+        options.binary_location = chrome_bin
+
+    chromedriver_bin = os.getenv("CHROMEDRIVER_BIN") or shutil.which("chromedriver")
+    if chromedriver_bin:
+        logger.info("Initializing WebDriver with system Chromium", chrome_bin=chrome_bin, chromedriver_bin=chromedriver_bin)
+        service = Service(chromedriver_bin)
+    else:
+        logger.info("System chromedriver not found, falling back to ChromeDriverManager", chrome_bin=chrome_bin)
+        service = Service(ChromeDriverManager().install())
+
     driver = webdriver.Chrome(service=service, options=options)
-    logger.info("WebDriver initialized successfully using ChromeDriverManager.")
+    logger.info("WebDriver initialized successfully.", chrome_bin=chrome_bin, using_system_driver=bool(chromedriver_bin))
     return driver
 
 
@@ -244,23 +270,29 @@ def scroll_to_end(driver):
 def parse_table(driver, month, year):
     global SCRAPER_TIMEZONE
     data = []
-    table = driver.find_element(By.CLASS_NAME, "calendar__table")
+    WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located((By.CLASS_NAME, "calendar__table"))
+    )
+    soup = BeautifulSoup(driver.page_source, "lxml")
+    table = soup.select_one(".calendar__table")
+    if table is None:
+        raise RuntimeError("ForexFactory calendar table not found in page source")
 
-    for row in table.find_elements(By.TAG_NAME, "tr"):
+    for row in table.find_all("tr"):
         row_data = {}
-        event_id = row.get_attribute("data-event-id")
+        event_id = row.get("data-event-id")
 
-        for element in row.find_elements(By.TAG_NAME, "td"):
-            class_name = element.get_attribute('class')
+        for element in row.find_all("td"):
+            class_name = " ".join(element.get("class", []))
 
             if class_name in ALLOWED_ELEMENT_TYPES:
                 class_name_key = ALLOWED_ELEMENT_TYPES.get(f"{class_name}", "cell")
 
                 if "calendar__impact" in class_name:
-                    impact_elements = element.find_elements(By.TAG_NAME, "span")
+                    impact_elements = element.find_all("span")
                     color = None
                     for impact in impact_elements:
-                        impact_class = impact.get_attribute("class")
+                        impact_class = " ".join(impact.get("class", []))
                         color = ICON_COLOR_MAP.get(impact_class)
                     row_data[f"{class_name_key}"] = color if color else "impact"
 
@@ -268,14 +300,17 @@ def parse_table(driver, month, year):
                     detail_url = f"https://www.forexfactory.com/calendar?month={month}#detail={event_id}"
                     row_data[f"{class_name_key}"] = detail_url
 
-                elif element.text:
-                    row_data[f"{class_name_key}"] = element.text
                 else:
-                    row_data[f"{class_name_key}"] = "empty"
+                    text = element.get_text(" ", strip=True)
+                    if text:
+                        row_data[f"{class_name_key}"] = text
+                    else:
+                        row_data[f"{class_name_key}"] = "empty"
 
         if row_data:
             data.append(row_data)
 
+    logger.info("ForexFactory rows parsed", rows=len(data), month=month, year=year)
     save_csv(data, month, year)
     return data, month
 
@@ -346,6 +381,44 @@ def read_csv(month: str, year: int) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def read_latest_csv() -> pd.DataFrame:
+    """Read the most recently written cached CSV as a fallback."""
+    if not NEWS_DATA_DIR.exists():
+        return pd.DataFrame()
+
+    csv_files = sorted(NEWS_DATA_DIR.glob("*_news.csv"), key=lambda path: path.stat().st_mtime, reverse=True)
+    if not csv_files:
+        return pd.DataFrame()
+
+    return pd.read_csv(csv_files[0])
+
+
+async def ensure_current_month_csv():
+    """Kick off a background scrape if the current month's CSV is missing."""
+    global _SCRAPE_TASK
+
+    now = datetime.now()
+    month = now.strftime("%B")
+    year = now.year
+
+    if csv_exists_for_month(month, year):
+        return
+
+    if _SCRAPE_TASK and not _SCRAPE_TASK.done():
+        return
+
+    async def _runner():
+        try:
+            await asyncio.to_thread(scrape_month, "this")
+        except Exception as e:
+            logger.error("background ForexFactory scrape failed", error=str(e))
+        finally:
+            global _SCRAPE_TASK
+            _SCRAPE_TASK = None
+
+    _SCRAPE_TASK = asyncio.create_task(_runner())
+
+
 # ============================================================================
 # BASESCRAPER WRAPPER (integrates with TradePilot)
 # ============================================================================
@@ -371,13 +444,17 @@ class ForexFactoryScraper(BaseScraper):
             
             # Check if CSV exists for current month
             if not csv_exists_for_month(month, year):
-                logger.info(f"No CSV for {month} {year}, scraping ForexFactory...")
-                scrape_month("this")
+                logger.info(f"No CSV for {month} {year}, starting background ForexFactory scrape...")
+                await ensure_current_month_csv()
             else:
                 logger.info(f"Using cached CSV for {month} {year}")
             
             # Read from CSV
             df = read_csv(month, year)
+            if df.empty:
+                df = read_latest_csv()
+                if not df.empty:
+                    logger.info("Using fallback cached ForexFactory CSV while current month is generating", fallback_rows=len(df))
             
             if df.empty:
                 logger.warning("No news data available")

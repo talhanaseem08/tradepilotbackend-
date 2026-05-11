@@ -14,7 +14,7 @@ export function AppSidebar() {
     return (
         <Sidebar>
             <SidebarHeader className="p-0">
-                <Link to="/dashboard" className="sidebar-logo h-[72px] py-3.5 flex items-center justify-center border-b border-neutral-100 dark:border-slate-700 px-4">
+                <Link to="/prompt" className="sidebar-logo h-[72px] py-3.5 flex items-center justify-center border-b border-neutral-100 dark:border-slate-700 px-4">
                     <ThemeLogo />
                 </Link>
             </SidebarHeader>

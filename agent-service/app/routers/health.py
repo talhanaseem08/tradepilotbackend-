@@ -1,18 +1,27 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter
-from app.core.ollama_client import ollama_client
+from app.config.database import get_db
+from app.config.redis import get_redis
 
 router = APIRouter()
 
 
 @router.get("/health")
 async def health_check():
-    ollama_ok = await ollama_client.is_healthy()
-    status = "ok" if ollama_ok else "degraded"
+    redis_ok = True
+    mongo_ok = get_db() is not None
+    try:
+        redis = await get_redis()
+        await redis.ping()
+    except Exception:
+        redis_ok = False
+
+    status = "ok" if redis_ok and mongo_ok else "degraded"
 
     return {
         "status": status,
         "service": "agent-service",
-        "ollama_reachable": ollama_ok,
+        "redis_reachable": redis_ok,
+        "mongo_connected": mongo_ok,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

@@ -20,6 +20,29 @@ router.post("/sentiment", authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.post("/agent/guard/forex", authenticate, async (req, res, next) => {
+  try {
+    const result = await proxyRequest("agent", "POST", "/guard/forex", req.body, req.correlationId);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+/** Forex Factory calendar (NLP `ForexFactoryScraper`) — must be before `/news/:symbol`. */
+router.get("/news/forex-calendar", authenticate, async (req, res, next) => {
+  try {
+    const result = await proxyRequest("nlp", "GET", "/news/forex-calendar", null, req.correlationId);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+/** CoinTelegraph RSS (NLP `CoinTelegraphScraper`). */
+router.get("/news/crypto", authenticate, async (req, res, next) => {
+  try {
+    const result = await proxyRequest("nlp", "GET", "/news/crypto", null, req.correlationId);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
 router.get("/news/:symbol", authenticate, async (req, res, next) => {
   try {
     const result = await proxyRequest("nlp", "GET", `/news/${req.params.symbol}`, null, req.correlationId);
@@ -31,7 +54,7 @@ router.get("/news/:symbol", authenticate, async (req, res, next) => {
 
 router.get("/data/candles/:symbol", authenticate, async (req, res, next) => {
   try {
-    const qs = new URLSearchParams(req.query).toString();
+    const qs = new URLSearchParams({ ...req.query, user_id: req.user.id }).toString();
     const result = await proxyRequest("trading", "GET", `/data/candles/${req.params.symbol}?${qs}`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
@@ -39,8 +62,24 @@ router.get("/data/candles/:symbol", authenticate, async (req, res, next) => {
 
 router.get("/data/tick/:symbol", authenticate, async (req, res, next) => {
   try {
-    const qs = new URLSearchParams(req.query).toString();
+    const qs = new URLSearchParams({ ...req.query, user_id: req.user.id }).toString();
     const result = await proxyRequest("trading", "GET", `/data/tick/${req.params.symbol}?${qs}`, null, req.correlationId);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+router.get("/data/account", authenticate, async (req, res, next) => {
+  try {
+    const qs = new URLSearchParams({ ...req.query, user_id: req.user.id }).toString();
+    const result = await proxyRequest("trading", "GET", `/data/account?${qs}`, null, req.correlationId);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+router.get("/data/open-positions", authenticate, async (req, res, next) => {
+  try {
+    const qs = new URLSearchParams({ ...req.query, user_id: req.user.id }).toString();
+    const result = await proxyRequest("trading", "GET", `/data/open-positions?${qs}`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });
@@ -100,6 +139,28 @@ router.post("/bots/:botId/rollback", authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+/** One-shot execution cycle for all active bots (sentiment gate + broker). Trading-service `POST /debug/execute`. */
+router.post("/trading/debug/execute", authenticate, async (req, res, next) => {
+  try {
+    const result = await proxyRequest("trading", "POST", "/debug/execute", {}, req.correlationId);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+/** One-shot real OANDA practice test trade for the user's active forex bot. */
+router.post("/trading/debug/test-oanda-execute", authenticate, async (req, res, next) => {
+  try {
+    const result = await proxyRequest(
+      "trading",
+      "POST",
+      "/debug/test-oanda-execute",
+      { user_id: req.user.id },
+      req.correlationId
+    );
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
 // ── Trades ────────────────────────────────────────────────────────────────────
 
 router.get("/trades", authenticate, async (req, res, next) => {
@@ -111,6 +172,21 @@ router.get("/trades", authenticate, async (req, res, next) => {
 });
 
 // ── Backtest ──────────────────────────────────────────────────────────────────
+
+/** Script-style backtest (flat path — avoids 404 on older gateways where nested `/backtest/script-run` was missing). */
+const scriptBacktestHandler = async (req, res, next) => {
+  try {
+    const result = await proxyRequest(
+      "trading",
+      "POST",
+      "/backtest/script-run",
+      { ...req.body, user_id: req.user.id },
+      req.correlationId
+    );
+    res.json(result);
+  } catch (err) { next(err); }
+};
+router.post("/backtest-script-run", authenticate, scriptBacktestHandler);
 
 /** Fetch candles on the trading service, then run backtest — one round trip from the client. */
 router.post("/backtest/run", authenticate, async (req, res, next) => {
@@ -155,12 +231,29 @@ router.post("/backtest/run", authenticate, async (req, res, next) => {
   }
 });
 
+/** One-shot real Binance demo/live test trade for the user's active crypto bot. */
+router.post("/trading/debug/test-binance-execute", authenticate, async (req, res, next) => {
+  try {
+    const result = await proxyRequest(
+      "trading",
+      "POST",
+      "/debug/test-binance-execute",
+      { user_id: req.user.id },
+      req.correlationId
+    );
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
 router.post("/backtest", authenticate, async (req, res, next) => {
   try {
     const result = await proxyRequest("trading", "POST", "/backtest", req.body, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });
+
+/** Long-range script backtest — alias (same handler as `/backtest-script-run`). */
+router.post("/backtest/script-run", authenticate, scriptBacktestHandler);
 
 router.get("/backtest/reports", authenticate, async (req, res, next) => {
   try {

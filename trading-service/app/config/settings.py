@@ -8,10 +8,12 @@ class Settings(BaseSettings):
     mongo_uri: str = "mongodb://localhost:27017/tradepilot"
     mongo_db_name: str = "tradepilot"
     nlp_service_url: str = "http://localhost:8001"
-    broker_mode: str = "paper"
+    agent_service_url: str = "http://localhost:8003"
+    broker_mode: str = "broker"
     execution_interval_seconds: int = 300   # how often the loop runs (5 min)
     max_open_trades_per_user: int = 3       # cross-bot risk guard
     paper_initial_balance: float = 10000.0  # starting balance for paper broker
+    encryption_key: str = ""
 
     # OANDA
     oanda_api_key: str = ""
@@ -31,6 +33,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 
 settings = Settings()

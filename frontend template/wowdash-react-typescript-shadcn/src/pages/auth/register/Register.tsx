@@ -10,8 +10,9 @@ import {
   registerRequest,
   setSessionToken,
   setSessionUserEmail,
+  setSessionUserId,
 } from "@/lib/auth"
-import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react"
+import { Check, Circle, Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react"
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { toast } from "react-toastify"
@@ -23,12 +24,45 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
 import * as z from "zod"
 
+const passwordRules = {
+  minLength: (value: string) => value.length >= 8,
+  lowercase: (value: string) => /[a-z]/.test(value),
+  uppercase: (value: string) => /[A-Z]/.test(value),
+  number: (value: string) => /\d/.test(value),
+  special: (value: string) => /[^A-Za-z0-9]/.test(value),
+}
+
+const passwordErrorMessage =
+  "Use at least 8 characters, including uppercase, lowercase, a number, and a special character."
+
+function getPasswordChecks(value: string) {
+  return {
+    minLength: passwordRules.minLength(value),
+    lowercase: passwordRules.lowercase(value),
+    uppercase: passwordRules.uppercase(value),
+    number: passwordRules.number(value),
+    special: passwordRules.special(value),
+  }
+}
+
 const formSchema = z.object({
   email: z.string().email("Enter a valid email address."),
   password: z
     .string()
-    .min(6, "Password must be at least 6 characters.")
-    .max(128, "Password is too long."),
+    .max(128, "Password is too long.")
+    .refine((value) => passwordRules.minLength(value), {
+      message: "Password is required",
+    })
+    .refine(
+      (value) =>
+        passwordRules.lowercase(value) &&
+        passwordRules.uppercase(value) &&
+        passwordRules.number(value) &&
+        passwordRules.special(value),
+      {
+        message: passwordErrorMessage,
+      }
+    ),
 })
 
 const Register = () => {
@@ -44,6 +78,8 @@ const Register = () => {
       password: "",
     },
   })
+  const passwordValue = form.watch("password") ?? ""
+  const passwordChecks = getPasswordChecks(passwordValue)
 
   const handleRegister = async (data: z.infer<typeof formSchema>) => {
     setIsSubmitting(true)
@@ -66,8 +102,9 @@ const Register = () => {
 
       setSessionToken(result.data.token)
       setSessionUserEmail(result.data.user.email)
-      toast.success("Account created. You are signed in.")
-      navigate("/prompt")
+      setSessionUserId(result.data.user.id)
+      toast.success("Account created. Welcome to TradePilot.")
+      navigate("/welcome", { replace: true })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Registration failed.")
     } finally {
@@ -86,13 +123,13 @@ const Register = () => {
       <div className="flex flex-col justify-center px-6 py-8 lg:w-1/2">
         <div className="mx-auto w-full lg:max-w-[464px]">
           <div>
-            <Link to="/dashboard" className="mb-2.5 inline-block max-w-[290px]">
-              <ThemeLogo />
+            <Link to="/dashboard" className="mb-2.5 inline-block max-w-[180px]">
+              <ThemeLogo className="h-[42px] max-w-[180px]" />
             </Link>
-            <h4 className="mb-3">Sign up for an Account</h4>
+            <h4 className="mb-3">Welcome to TradePilot</h4>
             <p className="text-secondary-light mb-8 text-lg">
-              Create a TradePilot account with email and password, or continue
-              with Google.
+              Set up your workspace to build strategies, review backtests, and
+              stay aligned with market sentiment.
             </p>
           </div>
 
@@ -110,7 +147,7 @@ const Register = () => {
                         type="email"
                         aria-invalid={fieldState.invalid}
                         disabled={isSubmitting}
-                        placeholder="Email"
+                        placeholder="Enter your email"
                         autoComplete="email"
                         className="!shadow-none !ring-0 h-14 rounded-xl border border-neutral-300 bg-neutral-100 ps-13 pe-12 focus:border-primary focus-visible:border-primary dark:border-slate-700 dark:bg-slate-800 dark:focus:border-primary"
                       />
@@ -135,7 +172,7 @@ const Register = () => {
                         type={showPassword ? "text" : "password"}
                         aria-invalid={fieldState.invalid}
                         disabled={isSubmitting}
-                        placeholder="Password"
+                        placeholder="Create a password"
                         autoComplete="new-password"
                         className="!shadow-none !ring-0 h-14 rounded-xl border border-neutral-300 bg-neutral-100 ps-13 pe-12 focus:border-primary focus-visible:border-primary dark:border-slate-700 dark:bg-slate-800 dark:focus:border-primary"
                       />
@@ -151,6 +188,35 @@ const Register = () => {
                         )}
                       </Button>
                     </div>
+                    {passwordValue.length > 0 ? (
+                      <div className="mt-3 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/40">
+                        <p className="mb-3 text-xs font-semibold tracking-[0.18em] text-neutral-500 uppercase dark:text-slate-400">
+                          Password security
+                        </p>
+                        <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                          <PasswordRequirement
+                            met={passwordChecks.minLength}
+                            label="8 Character minimum"
+                          />
+                          <PasswordRequirement
+                            met={passwordChecks.special}
+                            label="1 Special Character"
+                          />
+                          <PasswordRequirement
+                            met={passwordChecks.lowercase}
+                            label="1 Lowercase character"
+                          />
+                          <PasswordRequirement
+                            met={passwordChecks.number}
+                            label="1 Number"
+                          />
+                          <PasswordRequirement
+                            met={passwordChecks.uppercase}
+                            label="1 Uppercase character"
+                          />
+                        </div>
+                      </div>
+                    ) : null}
                     {fieldState.invalid && (
                       <FieldError errors={[fieldState.error]} />
                     )}
@@ -166,7 +232,7 @@ const Register = () => {
                 required
               />
               <label htmlFor="createAccount" className="text-sm">
-                By creating an account you agree to the{" "}
+                By creating an account, you agree to the{" "}
                 <Link
                   to="#"
                   className="text-primary font-semibold hover:underline"
@@ -192,12 +258,12 @@ const Register = () => {
               {isLoading && (
                 <Loader2 className="mr-2 h-4.5 w-4.5 animate-spin" />
               )}
-              {isLoading ? "Creating account..." : "Sign Up"}
+              {isLoading ? "Creating account..." : "Create Account"}
             </Button>
 
             <div className="center-border-horizontal relative mt-8 text-center before:absolute before:start-0 before:top-1/2 before:h-[1px] before:w-full before:-translate-y-1/2 before:bg-neutral-300">
               <span className="bg-background relative z-[2] px-4">
-                Or sign up with
+                Or continue with
               </span>
             </div>
             <SocialLogin mode="signup" />
@@ -218,6 +284,30 @@ const Register = () => {
       </div>
     </section>
     </>
+  )
+}
+
+function PasswordRequirement({
+  met,
+  label,
+}: {
+  met: boolean
+  label: string
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 text-sm",
+        met ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"
+      )}
+    >
+      {met ? (
+        <Check className="h-4 w-4 shrink-0" />
+      ) : (
+        <Circle className="h-3 w-3 shrink-0 fill-current stroke-none" />
+      )}
+      <span>{label}</span>
+    </div>
   )
 }
 

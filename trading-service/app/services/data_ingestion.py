@@ -8,6 +8,11 @@ import json
 from app.config.database import get_db
 from app.config.redis import get_redis
 from app.adapters.factory import create_data_provider
+from app.services.cryptobots_runtime_adapter import (
+    is_cryptobot_type,
+    required_cryptobot_candle_count,
+    supported_cryptobot_symbols,
+)
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -31,10 +36,15 @@ async def get_cached_candles(symbol: str, timeframe: str, market: str) -> list[d
     return None
 
 
-async def _ingest_symbol(symbol: str, timeframe: str, market: str):
+async def _ingest_symbol(symbol: str, timeframe: str, market: str, strategy_type: str | None = None):
     provider = create_data_provider(market)
     try:
-        candles = await provider.fetch_candles(symbol, timeframe, count=100)
+        candle_count = (
+            required_cryptobot_candle_count(strategy_type)
+            if strategy_type and is_cryptobot_type(strategy_type)
+            else 100
+        )
+        candles = await provider.fetch_candles(symbol, timeframe, count=candle_count)
         if candles:
             redis = await get_redis()
             await redis.set(
@@ -58,7 +68,7 @@ async def _ingestion_cycle():
 
     active_bots = await db.bot_instances.find(
         {"status": "active"},
-        {"assetPair": 1, "timeframe": 1, "market": 1},
+        {"assetPair": 1, "timeframe": 1, "market": 1, "strategyType": 1},
     ).to_list(None)
 
     if not active_bots:
@@ -68,10 +78,19 @@ async def _ingestion_cycle():
     seen: set[tuple] = set()
     tasks = []
     for bot in active_bots:
-        key = (bot["assetPair"], bot.get("timeframe", "1h"), bot.get("market", "forex"))
-        if key not in seen:
-            seen.add(key)
-            tasks.append(_ingest_symbol(*key))
+        timeframe = bot.get("timeframe", "1h")
+        market = bot.get("market", "forex")
+        strategy_type = bot.get("strategyType")
+        if strategy_type and is_cryptobot_type(strategy_type):
+            symbols = supported_cryptobot_symbols(strategy_type) or [bot["assetPair"]]
+        else:
+            symbols = [bot["assetPair"]]
+
+        for symbol in symbols:
+            key = (symbol, timeframe, market, strategy_type)
+            if key not in seen:
+                seen.add(key)
+                tasks.append(_ingest_symbol(*key))
 
     logger.info("ingestion cycle", unique_feeds=len(tasks))
     await asyncio.gather(*tasks, return_exceptions=True)

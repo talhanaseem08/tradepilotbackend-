@@ -4,8 +4,17 @@ const logger = require("../utils/logger");
 
 const serviceClients = {
   nlp: axios.create({ baseURL: config.services.nlp, timeout: 30000 }),
-  trading: axios.create({ baseURL: config.services.trading, timeout: 30000 }),
+  /** Script backtests fetch 30 days of candles + compute — allow long OANDA ranges. */
+  trading: axios.create({ baseURL: config.services.trading, timeout: 120000 }),
   agent: axios.create({ baseURL: config.services.agent, timeout: 30000 }),
+};
+
+/** Shown on ECONNREFUSED so operators fix the right upstream (calendar/news use NLP, not trading). */
+const UPSTREAM_HINT = {
+  nlp: "NLP_SERVICE_URL=http://localhost:8001; in Docker Compose use http://nlp-service:8001",
+  trading:
+    "TRADING_SERVICE_URL=http://localhost:8002; in Docker Compose use http://trading-service:8002",
+  agent: "AGENT_SERVICE_URL=http://localhost:8003; in Docker Compose use http://agent-service:8003",
 };
 
 async function proxyRequest(serviceName, method, path, data, correlationId) {
@@ -35,7 +44,8 @@ async function proxyRequest(serviceName, method, path, data, correlationId) {
         message = data.error.message;
       }
     } else if (err.code === "ECONNREFUSED" || err.code === "ENOTFOUND") {
-      message = `${serviceName} unreachable (${err.code}). Is it running? For gateway on the host use TRADING_SERVICE_URL=http://localhost:8002; in Docker Compose use http://trading-service:8002.`;
+      const hint = UPSTREAM_HINT[serviceName] || "check NLP_SERVICE_URL, TRADING_SERVICE_URL, AGENT_SERVICE_URL";
+      message = `${serviceName} unreachable (${err.code}). Is it running? For gateway on the host set ${hint}.`;
     } else if (err.message && !data) {
       message = `${serviceName} service unavailable: ${err.message}`;
     }

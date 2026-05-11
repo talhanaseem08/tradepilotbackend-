@@ -4,7 +4,7 @@ from app.config.redis import get_redis, close_redis
 from app.config.database import connect_mongo, close_mongo
 from app.config.indexes import create_indexes
 from app.core.ollama_client import ollama_client
-from app.workers.agent_worker import start_agent_worker, stop_agent_worker
+from app.services.forex_guard_service import close_forex_news_client
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -18,11 +18,8 @@ async def lifespan(app: FastAPI):
     await connect_mongo()
     logger.info("mongodb connected")
     await create_indexes()
-    ollama_ok = await ollama_client.is_healthy()
-    logger.info("ollama remote status", healthy=ollama_ok)
-    start_agent_worker()
     yield
-    stop_agent_worker()
+    await close_forex_news_client()
     await ollama_client.close()
     await close_redis()
     await close_mongo()

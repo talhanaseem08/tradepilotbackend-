@@ -18,10 +18,16 @@ from app.core.redis_client import get_bot_params
 from app.bots.registry import create_bot
 from app.adapters.factory import create_broker, create_data_provider
 from app.services.data_ingestion import get_cached_candles
+from app.services.broker_credentials import get_user_broker_credentials
+from app.services.cryptobots_runtime_adapter import (
+    build_cryptobot_trade_signal,
+    is_cryptobot_type,
+    required_cryptobot_candle_count,
+    supported_cryptobot_symbols,
+)
 from app.adapters.paper_adapter import PaperBrokerAdapter
 from app.schemas.trade import TradeSignal
 from app.services.trade_executor import execute_with_sentiment_gate
-from app.services.performance_monitor import record_trade_result
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -96,85 +102,220 @@ async def _execute_bot(bot_doc: dict):
         else bot_doc.get("parameters", {})
     )
 
-    # Reconstruct bot with latest parameters
-    try:
-        bot = create_bot(strategy, symbol, timeframe, parameters)
-    except ValueError as e:
-        logger.error("bot creation failed", bot_id=bot_id, error=str(e))
-        return
+    broker_credentials = await get_user_broker_credentials(user_id, market)
+    broker_mode = (settings.broker_mode or "broker").lower()
 
-    # Fetch latest candles — try cache first, fall back to live API
-    candles = await get_cached_candles(symbol, timeframe, market)
-    if not candles:
-        provider = create_data_provider(market)
-        candles = await provider.fetch_candles(symbol, timeframe, count=100)
-    if not candles:
-        logger.warning("no candles received", bot_id=bot_id, symbol=symbol)
-        return
-
-    # Strategy analysis
-    direction = bot.analyze(candles)
-    if direction == "hold":
-        return
-
-    # Cross-bot risk guard — blocks duplicate symbol or too many open trades
-    allowed, reason = await _cross_bot_risk_check(user_id, symbol)
-    if not allowed:
-        logger.warning("trade blocked by risk guard",
-                       bot_id=bot_id, symbol=symbol, reason=reason)
-        return
-
-    # Build trade signal using bot's own calculations
-    current_price = float(candles[-1].get("close", 0))
-    stop_loss     = bot.calculate_stop_loss(current_price, direction)
-    take_profit   = bot.calculate_take_profit(current_price, direction)
-    quantity      = bot.calculate_position_size(
-        balance=settings.paper_initial_balance
-    )
-
-    signal = TradeSignal(
-        action=direction,
-        symbol=symbol,
-        price=current_price,
-        stop_loss=stop_loss,
-        take_profit=take_profit,
-        quantity=quantity,
-    )
-
-    # Broker: paper per user or live
-    if settings.broker_mode == "paper":
-        broker = _get_paper_broker(user_id or bot_id)
+    if is_cryptobot_type(strategy):
+        target_symbols = supported_cryptobot_symbols(strategy) or [symbol]
     else:
-        broker = create_broker(market)
+        target_symbols = [symbol]
 
-    # Sentiment gate + execution + TradeRecord save
-    result = await execute_with_sentiment_gate(
-        signal=signal,
-        broker=broker,
-        market=market,
-        bot_id=bot_id,
-        user_id=user_id,
-    )
+    broker = None
+    provider = None
+    try:
+        if broker_mode == "paper":
+            broker = _get_paper_broker(user_id or bot_id)
+        else:
+            if not broker_credentials:
+                logger.warning(
+                    "trade skipped - no verified broker connected",
+                    bot_id=bot_id,
+                    user_id=user_id,
+                    market=market,
+                    broker_mode=broker_mode,
+                )
+                return
+            broker = create_broker(market, broker_credentials)
 
-    if result is None:
-        logger.info("trade skipped (sentiment gate or broker error)",
-                    bot_id=bot_id, symbol=symbol)
-        return
+        if is_cryptobot_type(strategy):
+            provider = create_data_provider(market, broker_credentials)
+            for target_symbol in target_symbols:
+                candle_count = required_cryptobot_candle_count(strategy)
+                candles = await get_cached_candles(target_symbol, timeframe, market)
+                if not candles or len(candles) < candle_count:
+                    candles = await provider.fetch_candles(target_symbol, timeframe, count=candle_count)
+                if not candles:
+                    logger.warning(
+                        "no candles received",
+                        bot_id=bot_id,
+                        user_id=user_id,
+                        strategy=strategy,
+                        market=market,
+                        symbol=target_symbol,
+                    )
+                    continue
 
-    # PnL is 0 when trade opens — will be updated when it closes
-    await record_trade_result(
-        bot_id=bot_id,
-        pnl=0.0,
-        bot_type=strategy,
-        symbol=symbol,
-        market=market,
-        timeframe=timeframe,
-        parameters=parameters,
-    )
+                try:
+                    signal = build_cryptobot_trade_signal(
+                        bot_type=strategy,
+                        symbol=target_symbol,
+                        parameters=parameters,
+                        candles=candles,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "cryptobot runtime signal build failed",
+                        bot_id=bot_id,
+                        user_id=user_id,
+                        strategy=strategy,
+                        market=market,
+                        symbol=target_symbol,
+                        error=str(e),
+                    )
+                    continue
+                if signal is None:
+                    logger.info(
+                        "cryptobot produced no trade signal",
+                        bot_id=bot_id,
+                        user_id=user_id,
+                        strategy=strategy,
+                        market=market,
+                        symbol=target_symbol,
+                    )
+                    continue
 
-    logger.info("trade executed",
-                bot_id=bot_id, symbol=symbol,
-                direction=direction, price=current_price)
+                logger.info(
+                    "cryptobot trade signal built",
+                    bot_id=bot_id,
+                    user_id=user_id,
+                    strategy=strategy,
+                    market=market,
+                    symbol=target_symbol,
+                    action=signal.action,
+                    price=signal.price,
+                    quantity=signal.quantity,
+                    stop_loss=signal.stop_loss,
+                    take_profit=signal.take_profit,
+                )
+
+                allowed, reason = await _cross_bot_risk_check(user_id, target_symbol)
+                if not allowed:
+                    logger.warning(
+                        "trade blocked by risk guard",
+                        bot_id=bot_id,
+                        user_id=user_id,
+                        strategy=strategy,
+                        market=market,
+                        symbol=target_symbol,
+                        reason=reason,
+                    )
+                    continue
+
+                result = await execute_with_sentiment_gate(
+                    signal=signal,
+                    broker=broker,
+                    market=market,
+                    bot_id=bot_id,
+                    user_id=user_id,
+                )
+                if result is None:
+                    logger.info(
+                        "trade skipped (sentiment gate or broker error)",
+                        bot_id=bot_id,
+                        user_id=user_id,
+                        strategy=strategy,
+                        market=market,
+                        symbol=target_symbol,
+                    )
+                    continue
+
+                logger.info(
+                    "trade executed",
+                    bot_id=bot_id,
+                    user_id=user_id,
+                    strategy=strategy,
+                    market=market,
+                    symbol=target_symbol,
+                    direction=signal.action,
+                    price=signal.price,
+                )
+            return
+
+        # Reconstruct non-crypto bot with latest parameters
+        try:
+            bot = create_bot(strategy, symbol, timeframe, parameters)
+        except ValueError as e:
+            logger.error("bot creation failed", bot_id=bot_id, error=str(e))
+            return
+
+        # Fetch latest candles — try cache first, fall back to live API
+        candles = await get_cached_candles(symbol, timeframe, market)
+        if not candles or len(candles) < 100:
+            provider = create_data_provider(market, broker_credentials)
+            candles = await provider.fetch_candles(symbol, timeframe, count=100)
+        if not candles:
+            logger.warning(
+                "no candles received",
+                bot_id=bot_id,
+                user_id=user_id,
+                strategy=strategy,
+                market=market,
+                symbol=symbol,
+            )
+            return
+
+        # Re-run strategy analysis now that candles are loaded
+        direction = bot.analyze(candles)
+        if direction == "hold":
+            return
+
+        current_price = float(candles[-1].get("close", 0))
+        signal = TradeSignal(
+            action=direction,
+            symbol=symbol,
+            price=current_price,
+            stop_loss=bot.calculate_stop_loss(current_price, direction),
+            take_profit=bot.calculate_take_profit(current_price, direction),
+            quantity=bot.calculate_position_size(balance=settings.paper_initial_balance),
+        )
+
+        allowed, reason = await _cross_bot_risk_check(user_id, symbol)
+        if not allowed:
+            logger.warning(
+                "trade blocked by risk guard",
+                bot_id=bot_id,
+                user_id=user_id,
+                strategy=strategy,
+                market=market,
+                symbol=symbol,
+                reason=reason,
+            )
+            return
+
+        result = await execute_with_sentiment_gate(
+            signal=signal,
+            broker=broker,
+            market=market,
+            bot_id=bot_id,
+            user_id=user_id,
+        )
+
+        if result is None:
+            logger.info(
+                "trade skipped (sentiment gate or broker error)",
+                bot_id=bot_id,
+                user_id=user_id,
+                strategy=strategy,
+                market=market,
+                symbol=symbol,
+            )
+            return
+
+        logger.info(
+            "trade executed",
+            bot_id=bot_id,
+            user_id=user_id,
+            strategy=strategy,
+            market=market,
+            symbol=symbol,
+            direction=signal.action,
+            price=signal.price,
+        )
+    finally:
+        if provider and hasattr(provider, "close"):
+            await provider.close()
+        if broker and hasattr(broker, "close"):
+            await broker.close()
 
 
 # ── Cycle + worker loop ───────────────────────────────────────────────────────

@@ -5,6 +5,9 @@ import UpdownBarChart from "@/components/charts/UpdownBarChart";
 import LazyWrapper from "@/components/LazyWrapper";
 import DefaultCardComponent from "@/components/shared/DefaultCardComponent";
 import Breadcrumb from "@/layouts/Breadcrumb";
+import { monthlyProfitLossBreakdown } from "@/lib/dashboardSeries";
+
+const emptyMonthly = monthlyProfitLossBreakdown([], 12);
 
 const ColumnChartPage = () => {
     return (
@@ -15,7 +18,16 @@ const ColumnChartPage = () => {
                 <DefaultCardComponent title="Column Charts">
                     <LazyWrapper>
                         <div className="-m-2">
-                            <DoubleBarChart />
+                            <DoubleBarChart
+                                chartHeight={264}
+                                colorOne="487FFF"
+                                colorTwo="FF9F29"
+                                categories={emptyMonthly.categories}
+                                series={[
+                                    { name: "Gross profit", data: emptyMonthly.grossProfit },
+                                    { name: "Gross loss", data: emptyMonthly.grossLoss },
+                                ]}
+                            />
                         </div>
                     </LazyWrapper>
                 </DefaultCardComponent>

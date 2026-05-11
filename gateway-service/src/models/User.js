@@ -38,6 +38,14 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    onboardingCompleted: {
+      type: Boolean,
+      default: false,
+    },
+    onboardingCompletedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

@@ -84,14 +84,14 @@ const ResetPassword = () => {
         <div className="flex flex-col justify-center px-6 py-8 lg:w-1/2">
           <div className="mx-auto w-full lg:max-w-[464px]">
             <div>
-              <Link to="/dashboard" className="mb-2.5 inline-block max-w-[290px]">
-                <ThemeLogo />
+              <Link to="/dashboard" className="mb-2.5 inline-block max-w-[180px]">
+                <ThemeLogo className="h-[42px] max-w-[180px]" />
               </Link>
-              <h4 className="mb-3">Set a new password</h4>
+              <h4 className="mb-3">Create a new password</h4>
               <p className="text-secondary-light mb-8 text-lg">
                 {token
-                  ? "Choose a new password for your TradePilot account."
-                  : "This link is invalid or incomplete. Request a new reset email."}
+                  ? "Choose a new password to regain access to your TradePilot workspace."
+                  : "This reset link is invalid or incomplete. Request a new one to continue."}
               </p>
             </div>
 
@@ -110,7 +110,7 @@ const ResetPassword = () => {
                             type={showPassword ? "text" : "password"}
                             aria-invalid={fieldState.invalid}
                             disabled={isSubmitting}
-                            placeholder="New password"
+                            placeholder="Enter your new password"
                             autoComplete="new-password"
                             className="!shadow-none !ring-0 h-14 rounded-xl border border-neutral-300 bg-neutral-100 ps-13 pe-12 focus:border-primary focus-visible:border-primary dark:border-slate-700 dark:bg-slate-800 dark:focus:border-primary"
                           />
@@ -146,7 +146,7 @@ const ResetPassword = () => {
                             type={showConfirm ? "text" : "password"}
                             aria-invalid={fieldState.invalid}
                             disabled={isSubmitting}
-                            placeholder="Confirm new password"
+                            placeholder="Confirm your new password"
                             autoComplete="new-password"
                             className="!shadow-none !ring-0 h-14 rounded-xl border border-neutral-300 bg-neutral-100 ps-13 pe-12 focus:border-primary focus-visible:border-primary dark:border-slate-700 dark:bg-slate-800 dark:focus:border-primary"
                           />
@@ -180,7 +180,7 @@ const ResetPassword = () => {
                   {isSubmitting && (
                     <Loader2 className="mr-2 h-4.5 w-4.5 animate-spin" />
                   )}
-                  {isSubmitting ? "Updating..." : "Update password"}
+                  {isSubmitting ? "Updating password..." : "Update Password"}
                 </Button>
 
                 <div className="mt-8 text-center text-sm">

@@ -7,6 +7,7 @@ const { signToken } = require("../utils/jwt");
 const { AppError, ValidationError, UnauthorizedError } = require("../utils/errors");
 const logger = require("../utils/logger");
 const { sendPasswordResetEmail } = require("../services/email");
+const { proxyRequest } = require("../services/serviceProxy");
 
 /** Trim and strip wrapping quotes — mismatched audience breaks verifyIdToken. */
 function normalizeGoogleClientId(raw) {
@@ -21,11 +22,35 @@ function normalizeGoogleClientId(raw) {
   return s.length ? s : null;
 }
 
+function getPasswordValidationError(password) {
+  if (typeof password !== "string" || password.length < 8) {
+    return "Password must be at least 8 characters";
+  }
+  if (!/[a-z]/.test(password)) {
+    return "Password must include at least one lowercase character";
+  }
+  if (!/[A-Z]/.test(password)) {
+    return "Password must include at least one uppercase character";
+  }
+  if (!/\d/.test(password)) {
+    return "Password must include at least one number";
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return "Password must include at least one special character";
+  }
+  return null;
+}
+
 async function register(req, res, next) {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
       throw new ValidationError("Email and password are required");
+    }
+
+    const passwordError = getPasswordValidationError(password);
+    if (passwordError) {
+      throw new ValidationError(passwordError);
     }
 
     const existing = await User.findOne({ email });
@@ -49,6 +74,44 @@ async function register(req, res, next) {
   } catch (err) {
     next(err);
   }
+}
+
+async function getBotCountForUser(userId, correlationId) {
+  try {
+    const result = await proxyRequest(
+      "trading",
+      "GET",
+      `/bots/?user_id=${encodeURIComponent(String(userId))}`,
+      null,
+      correlationId
+    );
+    if (Array.isArray(result)) {
+      return result.length;
+    }
+    if (result && typeof result === "object") {
+      if (typeof result.count === "number") {
+        return result.count;
+      }
+      if (Array.isArray(result.bots)) {
+        return result.bots.length;
+      }
+    }
+    return 0;
+  } catch (err) {
+    logger.warn({
+      message: "Could not fetch bot count for app entry status",
+      userId: String(userId),
+      error: err.message,
+      correlationId,
+    });
+    return 0;
+  }
+}
+
+function resolveNextPath({ onboardingCompleted, botCount }) {
+  if (botCount > 0) return "/dashboard";
+  if (onboardingCompleted) return "/prompt";
+  return "/welcome";
 }
 
 async function login(req, res, next) {
@@ -179,6 +242,73 @@ async function googleLogin(req, res, next) {
   }
 }
 
+async function getAppEntryStatus(req, res, next) {
+  try {
+    const user = await User.findById(req.user.id).select(
+      "email role onboardingCompleted onboardingCompletedAt"
+    );
+    if (!user) {
+      throw new UnauthorizedError("User not found");
+    }
+
+    const botCount = await getBotCountForUser(user._id, req.correlationId);
+    const onboardingCompleted = !!user.onboardingCompleted;
+    const nextPath = resolveNextPath({ onboardingCompleted, botCount });
+
+    res.json({
+      onboardingCompleted,
+      onboardingCompletedAt: user.onboardingCompletedAt,
+      botCount,
+      nextPath,
+      user: {
+        id: String(user._id),
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function completeOnboarding(req, res, next) {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      {
+        onboardingCompleted: true,
+        onboardingCompletedAt: new Date(),
+      },
+      { new: true }
+    ).select("email role onboardingCompleted onboardingCompletedAt");
+
+    if (!user) {
+      throw new UnauthorizedError("User not found");
+    }
+
+    const botCount = await getBotCountForUser(user._id, req.correlationId);
+    const nextPath = resolveNextPath({
+      onboardingCompleted: true,
+      botCount,
+    });
+
+    logger.info({
+      message: "User completed onboarding",
+      userId: String(user._id),
+      correlationId: req.correlationId,
+    });
+
+    res.json({
+      onboardingCompleted: true,
+      onboardingCompletedAt: user.onboardingCompletedAt,
+      botCount,
+      nextPath,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 const RESET_TOKEN_BYTES = 32;
 const RESET_EXPIRY_MS = 60 * 60 * 1000;
 
@@ -280,8 +410,9 @@ async function resetPassword(req, res, next) {
     if (!token || !password) {
       throw new ValidationError("Token and password are required");
     }
-    if (typeof password !== "string" || password.length < 8) {
-      throw new ValidationError("Password must be at least 8 characters");
+    const passwordError = getPasswordValidationError(password);
+    if (passwordError) {
+      throw new ValidationError(passwordError);
     }
 
     const tokenHash = hashResetToken(token);
@@ -311,4 +442,12 @@ async function resetPassword(req, res, next) {
   }
 }
 
-module.exports = { register, login, googleLogin, forgotPassword, resetPassword };
+module.exports = {
+  register,
+  login,
+  googleLogin,
+  forgotPassword,
+  resetPassword,
+  getAppEntryStatus,
+  completeOnboarding,
+};

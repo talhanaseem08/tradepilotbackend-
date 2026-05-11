@@ -3,6 +3,7 @@ const { authenticate } = require("../middleware/auth");
 const { 
   setupMT5Account, 
   setupOandaAccount, 
+  setupBinanceAccount,
   verifyBrokerConnection,
   getBrokerAccounts 
 } = require("../controllers/brokerController");
@@ -17,6 +18,9 @@ router.post("/mt5/setup", authenticate, setupMT5Account);
 
 // Setup OANDA account  
 router.post("/oanda/setup", authenticate, setupOandaAccount);
+
+// Setup Binance account
+router.post("/binance/setup", authenticate, setupBinanceAccount);
 
 // Verify broker connection
 router.post("/verify/:brokerType", authenticate, verifyBrokerConnection);

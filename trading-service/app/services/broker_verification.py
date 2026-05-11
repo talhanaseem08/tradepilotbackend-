@@ -1,5 +1,11 @@
 import httpx
 from app.schemas.broker import VerifyResponse
+from app.services.binance_client import (
+    estimate_binance_wallet_total,
+    fetch_binance_spot_account_info,
+    fetch_binance_spot_prices,
+    test_binance_spot_order_permission,
+)
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -115,4 +121,58 @@ async def verify_oanda_connection(api_key: str, account_id: str, environment: st
         return VerifyResponse(
             success=False,
             error=f"OANDA verification failed: {str(e)}"
+        )
+
+
+async def verify_binance_connection(
+    api_key: str,
+    secret_key: str,
+    is_testnet: bool,
+) -> VerifyResponse:
+    try:
+        account_info = await fetch_binance_spot_account_info(
+            api_key=api_key,
+            secret_key=secret_key,
+            demo_mode=is_testnet,
+        )
+        await test_binance_spot_order_permission(
+            api_key=api_key,
+            secret_key=secret_key,
+            demo_mode=is_testnet,
+        )
+        prices = await fetch_binance_spot_prices(demo_mode=is_testnet)
+        wallet_totals = estimate_binance_wallet_total(
+            account_info=account_info,
+            prices=prices,
+            quote_currency="USDT",
+        )
+        total = wallet_totals["balance"]
+
+        logger.info("Binance connection verified", is_testnet=is_testnet, balance=total)
+
+        return VerifyResponse(
+            success=True,
+            balance=total,
+            equity=total,
+            currency="USDT",
+        )
+    except Exception as e:
+        error_message = str(e)
+        if is_testnet and '"code":-2008' in error_message:
+            error_message = (
+                "Binance Demo Spot could not recognize this API key. "
+                "TradePilot currently connects crypto bots through Binance Spot. "
+                "Create the API key from the Spot tab in demo.binance.com, not Futures Demo, then try again."
+            )
+        elif is_testnet and '"code":-2015' in error_message:
+            error_message = (
+                "Binance Demo Spot rejected this key for trading. The key can be wrong, lack Spot trading permission, "
+                "have an IP restriction, or be a mismatched key/secret pair. Use a Spot Demo key from demo.binance.com "
+                "with trading permission enabled and no blocking IP restriction."
+            )
+
+        logger.error("Binance verification error", error=error_message)
+        return VerifyResponse(
+            success=False,
+            error=f"Binance verification failed: {error_message}",
         )

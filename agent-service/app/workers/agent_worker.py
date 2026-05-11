@@ -1,5 +1,6 @@
 import asyncio
 import json
+import httpx
 from app.config.redis import get_redis
 from app.config.database import get_db
 from app.config.settings import settings
@@ -61,6 +62,38 @@ async def _blend_params(
     return blended
 
 
+async def _write_finetuned_bot(
+    bot_id: str,
+    bot_type: str,
+    old_parameters: dict,
+    new_parameters: dict,
+    reasoning: str,
+    consecutive_losses: int,
+) -> None:
+    """Call trading-service to write a finetuned bot file on disk."""
+    url = f"{settings.trading_service_url}/bots/finetune"
+    payload = {
+        "bot_id": bot_id,
+        "bot_type": bot_type,
+        "old_parameters": old_parameters,
+        "new_parameters": new_parameters,
+        "reasoning": reasoning,
+        "consecutive_losses": consecutive_losses,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            logger.info(
+                "finetuned bot file created",
+                bot_id=bot_id,
+                file_path=data.get("file_path"),
+            )
+    except Exception as exc:
+        logger.error("finetuned bot write request failed", bot_id=bot_id, error=str(exc))
+
+
 async def _process_trigger(data: dict):
     bot_id = data.get("bot_id", "")
     logger.info("agent trigger received", bot_id=bot_id)
@@ -112,6 +145,16 @@ async def _process_trigger(data: dict):
             )
             await db.optimization_logs.insert_one(log)
             logger.info("optimization log saved", bot_id=bot_id)
+
+        # Write finetuned bot file via trading-service
+        await _write_finetuned_bot(
+            bot_id=bot_id,
+            bot_type=request.bot_type,
+            old_parameters=request.current_parameters,
+            new_parameters=final_params,
+            reasoning=response.reasoning,
+            consecutive_losses=request.consecutive_losses,
+        )
     else:
         logger.error("agent failed - bot stays paused", bot_id=bot_id, reason=response.reasoning)
 

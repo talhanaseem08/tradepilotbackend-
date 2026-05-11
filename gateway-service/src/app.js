@@ -48,6 +48,7 @@ app.use(
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
         "script-src": ["'self'", "'unsafe-inline'", "https://cdn.socket.io"],
+        "img-src": ["'self'", "data:", "blob:", "https:"],
         "connect-src": [
           "'self'",
           "http://127.0.0.1:8001",
@@ -102,6 +103,9 @@ async function start() {
   server.listen(config.port, () => {
     logger.info(`Gateway service running on port ${config.port}`);
     logger.info(`Dashboard: http://localhost:${config.port}`);
+    logger.info(
+      `Proxy upstreams — NLP: ${config.services.nlp} | trading: ${config.services.trading} | agent: ${config.services.agent}`
+    );
     broadcastHealthNow();
   });
 }

@@ -1,9 +1,23 @@
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException
 from app.config.database import get_db
+from app.services.oanda_trade_sync import sync_oanda_trade_records_for_user
 from app.utils.logger import get_logger
 
 logger = get_logger()
 router = APIRouter(prefix="/trades", tags=["trades"])
+
+
+def _json_safe_doc(doc: dict) -> dict:
+    """Ensure Mongo datetimes and ObjectId serialize cleanly for the dashboard."""
+    out = dict(doc)
+    out["_id"] = str(out["_id"])
+    for key in ("timestamp", "closedAt", "openedAt"):
+        v = out.get(key)
+        if isinstance(v, datetime):
+            out[key] = v.isoformat()
+    return out
 
 
 @router.get("/")
@@ -18,6 +32,12 @@ async def get_trades(
     db = get_db()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not connected")
+
+    if user_id:
+        try:
+            await sync_oanda_trade_records_for_user(user_id)
+        except Exception as exc:
+            logger.warning("trade sync warning", user_id=user_id, error=str(exc))
 
     query = {}
     if bot_id:
@@ -35,10 +55,7 @@ async def get_trades(
 
     trades = []
     async for doc in cursor:
-        doc["_id"] = str(doc["_id"])
-        if doc.get("timestamp"):
-            doc["timestamp"] = doc["timestamp"].isoformat()
-        trades.append(doc)
+        trades.append(_json_safe_doc(doc))
 
     return {
         "trades": trades,

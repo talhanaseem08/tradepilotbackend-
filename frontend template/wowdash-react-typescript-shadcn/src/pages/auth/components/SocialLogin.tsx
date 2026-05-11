@@ -1,10 +1,12 @@
 import GoogleIcon from "@/assets/images/icons/google-icon.png"
 import { Button } from "@/components/ui/button"
 import {
+  fetchAppEntryStatus,
   getApiErrorMessage,
   loginWithGoogleIdToken,
   setSessionToken,
   setSessionUserEmail,
+  setSessionUserId,
 } from "@/lib/auth"
 import { Loader2 } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
@@ -74,12 +76,20 @@ const SocialLogin = ({ mode = "signin" }: SocialLoginProps) => {
         }
         setSessionToken(result.data.token)
         setSessionUserEmail(result.data.user.email)
+        setSessionUserId(result.data.user.id)
         toast.success(
           mode === "signup"
             ? "Signed up with Google."
             : "Signed in with Google."
         )
-        navigate("/prompt")
+        if (mode === "signup") {
+          navigate("/welcome", { replace: true })
+          return
+        }
+        const entry = await fetchAppEntryStatus()
+        navigate(entry.ok ? entry.data.nextPath : "/dashboard", {
+          replace: true,
+        })
       } finally {
         setBusy(false)
       }

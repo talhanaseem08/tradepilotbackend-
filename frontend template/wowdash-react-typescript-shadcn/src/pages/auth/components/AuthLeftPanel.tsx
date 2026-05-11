@@ -1,6 +1,7 @@
 import { motion } from "framer-motion"
 
-import navbarLogo from "@/assets/images/brand/navbarlogo_1.svg"
+import darkLogo from "@/assets/images/footer-logo.svg"
+import lightLogo from "@/assets/images/navbarlogo-black.svg"
 import { cn } from "@/lib/utils"
 
 function FloatingPaths({ position }: { position: number }) {
@@ -66,18 +67,26 @@ export function AuthLeftPanel({ className }: AuthLeftPanelProps) {
       <div className="from-background absolute inset-0 z-10 bg-gradient-to-t to-transparent" />
       <div className="z-10 flex items-center">
         <img
-          src={navbarLogo}
+          src={lightLogo}
           alt="TradePilot"
-          width={168}
-          height={40}
-          className="h-8 w-auto max-w-[200px] object-contain object-left"
+          width={220}
+          height={52}
+          className="block h-[52px] w-auto max-w-[220px] object-contain object-left dark:hidden"
+        />
+        <img
+          src={darkLogo}
+          alt="TradePilot"
+          width={220}
+          height={52}
+          className="hidden h-[52px] w-auto max-w-[220px] object-contain object-left dark:block"
         />
       </div>
       <div className="z-10 mt-auto">
         <blockquote className="space-y-2">
           <p className="text-foreground text-xl">
-            &ldquo;One gateway for prompts, sentiment gates, and bot
-            orchestration — before anything hits the market.&rdquo;
+            &ldquo;We didn&rsquo;t build another trading bot. We built a system
+            that understands what you want to do and executes it
+            automatically.&rdquo;
           </p>
           <footer className="font-mono text-sm font-semibold">
             — TradePilot

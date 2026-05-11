@@ -1,0 +1,105 @@
+//@version=6
+strategy("OB Retest - Constant $1000 Risk",
+     overlay=true,
+     initial_capital=100000, // Capital set higher to accommodate $1k risk per trade
+     default_qty_type=strategy.cash, 
+     currency=currency.USD)
+
+// =====================
+// INPUTS
+// =====================
+grp_risk    = "Risk Management"
+fixedRisk    = input.float(1000.0, "Constant Risk ($)", minval=1.0, tooltip="Fixed dollar amount lost if Stop Loss is hit", group=grp_risk)
+useBE        = input.bool(true, "Move to Breakeven?", tooltip="Moves SL to entry once price hits 1:1 Risk/Reward", group=grp_risk)
+
+grp_ob      = "Order Block Settings"
+maxOBPct     = input.float(4.0, "Max OB Candle Size %", step=0.1, group=grp_ob)
+pivotLen     = input.int(5, "Resistance Pivot Length", group=grp_ob)
+
+grp_trail   = "Exit Settings"
+useTrailing  = input.bool(true, "Use Trailing Stop?", group=grp_trail)
+trailPerc    = input.float(2.0, "Trailing Stop %", step=0.5, group=grp_trail)
+
+// =====================
+// UTILITY & FILTERS
+// =====================
+pctMove(a, b) => math.abs(a - b) / b * 100
+volConfirmation = volume[3] > ta.sma(volume, 20)[3] 
+
+// =====================
+// ORDER BLOCK DETECTION
+// =====================
+obRangePct = pctMove(high[3], low[3])
+
+bullOB = (
+     close[3] < open[3] and
+     obRangePct <= maxOBPct and
+     close[5] > open[5] and
+     close[4] > open[4] and
+     close[2] > open[2] and
+     close[1] > open[1] and
+     volConfirmation
+ )
+
+var float obHigh = na
+var float obLow  = na
+var bool  obUsed = false
+
+if bullOB
+    obHigh := high[3]
+    obLow  := low[3]
+    obUsed := false
+
+// =====================
+// CONSTANT RISK POSITION SIZING
+// =====================
+// Formula: Quantity = Total Risk ($) / (Entry Price - Stop Loss Price)
+float riskPerUnit = close - obLow
+float posSize = (riskPerUnit > 0) ? (fixedRisk / riskPerUnit) : na
+
+// =====================
+// ENTRY LOGIC
+// =====================
+longTouch = not obUsed and not na(obHigh) and low <= obHigh and high >= obLow
+
+if longTouch and not na(posSize)
+    strategy.entry("Long OB", strategy.long, qty=posSize)
+    obUsed := true
+
+// =====================
+// EXIT LOGIC
+// =====================
+
+// 1. Hard Stop Loss (Close below OB Low)
+if strategy.position_size > 0 and close < obLow
+    strategy.close("Long OB", comment="SL: Hit $1000 Loss")
+
+// 2. Breakeven Logic (Move SL to Entry at 1:1 RR)
+if useBE and strategy.position_size > 0
+    float entryPrice = strategy.position_avg_price
+    float stopDist   = entryPrice - obLow
+    if high >= (entryPrice + stopDist)
+        strategy.exit("BE Exit", "Long OB", stop=entryPrice, comment="SL: Breakeven")
+
+// 3. Take Profit (Resistance Pivot)
+resistance = ta.pivothigh(high, pivotLen, pivotLen)
+if strategy.position_size > 0 and not na(resistance) and resistance > strategy.position_avg_price
+    strategy.exit("TP Pivot", "Long OB", limit=resistance, comment="TP: Resistance")
+
+// 4. Trailing Stop
+if useTrailing and strategy.position_size > 0
+    float trailTicks = (close * (trailPerc / 100)) / syminfo.mintick
+    strategy.exit("Trail", "Long OB", trail_points=trailTicks, trail_offset=trailTicks * 0.1, comment="TP: Trailing")
+
+// =====================
+// VISUALS
+// =====================
+plot(strategy.position_size > 0 ? obLow : na, "Current SL Level", color=color.red, style=plot.style_linebr, linewidth=2)
+
+if bullOB
+    box.new(bar_index - 3, obHigh, bar_index + 15, obLow, 
+         bgcolor=color.new(color.blue, 85), 
+         border_color=color.blue,
+         text="Bullish OB",
+         text_size=size.tiny)
+

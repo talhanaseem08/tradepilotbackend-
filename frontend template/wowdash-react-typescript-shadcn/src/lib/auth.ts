@@ -1,5 +1,9 @@
 const TOKEN_KEY = "tradepilot_token"
 const USER_EMAIL_KEY = "tradepilot_user_email"
+const USER_ID_KEY = "tradepilot_user_id"
+
+/** Prefix for per-account backtest history in localStorage (see `getBacktestHistoryStorageKey`). */
+export const BACKTEST_HISTORY_PREFIX = "tradepilot_backtest_history_v1"
 
 /**
  * Base URL for gateway API. In dev, prefer same-origin + Vite proxy (see vite.config)
@@ -23,6 +27,13 @@ export type LoginSuccess = {
 
 export type RegisterSuccess = LoginSuccess & {
   apiKey?: string
+}
+
+export type AppEntryStatus = {
+  onboardingCompleted: boolean
+  onboardingCompletedAt?: string | null
+  botCount: number
+  nextPath: "/welcome" | "/prompt" | "/dashboard"
 }
 
 export type ApiErrorBody = {
@@ -245,6 +256,10 @@ export function setSessionUserEmail(email: string): void {
   localStorage.setItem(USER_EMAIL_KEY, email)
 }
 
+export function setSessionUserId(id: string): void {
+  localStorage.setItem(USER_ID_KEY, id)
+}
+
 export function getSessionToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
@@ -253,9 +268,127 @@ export function getSessionUserEmail(): string | null {
   return localStorage.getItem(USER_EMAIL_KEY)
 }
 
+export function getSessionUserId(): string | null {
+  return localStorage.getItem(USER_ID_KEY)
+}
+
+/**
+ * localStorage key for backtest lab history — scoped to the logged-in user so
+ * switching accounts on the same browser does not show another user's runs.
+ */
+export function getBacktestHistoryStorageKey(): string {
+  const id = getSessionUserId()?.trim()
+  const email = getSessionUserEmail()?.trim().toLowerCase()
+  const scope = id || email
+  if (!scope) return BACKTEST_HISTORY_PREFIX
+  const safe = scope.replace(/[^a-zA-Z0-9@._-]/g, "_")
+  return `${BACKTEST_HISTORY_PREFIX}__${safe}`
+}
+
 export function clearSession(): void {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(USER_EMAIL_KEY)
+  localStorage.removeItem(USER_ID_KEY)
+}
+
+export async function fetchAppEntryStatus(): Promise<
+  | { ok: true; data: AppEntryStatus }
+  | { ok: false; status: number; body: ApiErrorBody }
+> {
+  const token = getSessionToken()
+  if (!token) {
+    return {
+      ok: false,
+      status: 401,
+      body: { error: { message: "No session found." } },
+    }
+  }
+
+  const base = getApiBaseUrl()
+  try {
+    const res = await fetch(`${base}/api/auth/app-entry`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+
+    const raw = (await readJsonBody(res)) as Record<string, unknown>
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        body: normalizeApiErrorBody(raw),
+      }
+    }
+
+    return {
+      ok: true,
+      data: raw as unknown as AppEntryStatus,
+    }
+  } catch {
+    return {
+      ok: false,
+      status: 0,
+      body: {
+        error: {
+          message:
+            "Network error — check that the gateway is running and VITE_API_BASE_URL.",
+        },
+      },
+    }
+  }
+}
+
+export async function completeOnboardingRequest(): Promise<
+  | { ok: true; data: AppEntryStatus }
+  | { ok: false; status: number; body: ApiErrorBody }
+> {
+  const token = getSessionToken()
+  if (!token) {
+    return {
+      ok: false,
+      status: 401,
+      body: { error: { message: "No session found." } },
+    }
+  }
+
+  const base = getApiBaseUrl()
+  try {
+    const res = await fetch(`${base}/api/auth/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    })
+
+    const raw = (await readJsonBody(res)) as Record<string, unknown>
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        body: normalizeApiErrorBody(raw),
+      }
+    }
+
+    return {
+      ok: true,
+      data: raw as unknown as AppEntryStatus,
+    }
+  } catch {
+    return {
+      ok: false,
+      status: 0,
+      body: {
+        error: {
+          message:
+            "Network error — check that the gateway is running and VITE_API_BASE_URL.",
+        },
+      },
+    }
+  }
 }
 
 export async function forgotPasswordRequest(
