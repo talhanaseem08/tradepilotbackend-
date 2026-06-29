@@ -109,6 +109,26 @@ async def fetch_binance_spot_exchange_info(
         return response.json()
 
 
+async def fetch_binance_spot_klines(
+    *,
+    symbol: str,
+    interval: str,
+    demo_mode: bool = False,
+    limit: int = 100,
+) -> list:
+    base_url = BINANCE_SPOT_DEMO_BASE_URL if demo_mode else BINANCE_SPOT_LIVE_BASE_URL
+    params = {
+        "symbol": symbol,
+        "interval": interval,
+        "limit": max(1, min(int(limit or 100), 1000)),
+    }
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        response = await client.get(f"{base_url}/api/v3/klines", params=params)
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, list) else []
+
+
 def get_binance_lot_size_filters(symbol_info: dict) -> tuple[float | None, float | None]:
     for flt in symbol_info.get("filters", []):
         if flt.get("filterType") == "LOT_SIZE":
@@ -116,6 +136,14 @@ def get_binance_lot_size_filters(symbol_info: dict) -> tuple[float | None, float
             step_size = float(flt.get("stepSize", 0) or 0)
             return min_qty, step_size
     return None, None
+
+
+def get_binance_price_filter(symbol_info: dict) -> float | None:
+    for flt in symbol_info.get("filters", []):
+        if flt.get("filterType") == "PRICE_FILTER":
+            tick_size = float(flt.get("tickSize", 0) or 0)
+            return tick_size
+    return None
 
 
 def quantize_binance_quantity(
@@ -137,6 +165,22 @@ def quantize_binance_quantity(
     if min_qty and snapped_float < min_qty:
         return 0.0
     return snapped_float
+
+
+def quantize_binance_price(
+    price: float,
+    *,
+    tick_size: float | None,
+) -> float:
+    if price <= 0:
+        return 0.0
+    if not tick_size or tick_size <= 0:
+        return price
+
+    price_dec = Decimal(str(price))
+    tick_dec = Decimal(str(tick_size))
+    snapped = (price_dec / tick_dec).to_integral_value(rounding=ROUND_DOWN) * tick_dec
+    return float(snapped)
 
 
 async def place_binance_spot_market_order(
@@ -195,6 +239,51 @@ async def place_binance_spot_market_order(
                 ) from exc
             raise
         return response.json()
+
+
+async def fetch_binance_spot_my_trades(
+    *,
+    api_key: str,
+    secret_key: str,
+    symbol: str,
+    demo_mode: bool = False,
+    limit: int = 100,
+    start_time: int | None = None,
+) -> list[dict]:
+    base_url = BINANCE_SPOT_DEMO_BASE_URL if demo_mode else BINANCE_SPOT_LIVE_BASE_URL
+    params: dict[str, str | int] = {
+        "symbol": symbol,
+        "limit": limit,
+        "timestamp": int(__import__("time").time() * 1000),
+        "recvWindow": 10000,
+    }
+    if start_time is not None:
+        params["startTime"] = start_time
+
+    query = urlencode(params)
+    signature = hmac.new(
+        secret_key.encode("utf-8"),
+        query.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    url = f"{base_url}/api/v3/myTrades?{query}&signature={signature}"
+    headers = {"X-MBX-APIKEY": api_key}
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        response = await client.get(url, headers=headers)
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            body = response.text.strip()
+            if body:
+                raise httpx.HTTPStatusError(
+                    f"{exc}. Response body: {body}",
+                    request=exc.request,
+                    response=exc.response,
+                ) from exc
+            raise
+        payload = response.json()
+        return payload if isinstance(payload, list) else []
 
 
 async def test_binance_spot_order_permission(

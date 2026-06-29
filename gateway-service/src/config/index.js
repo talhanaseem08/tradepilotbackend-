@@ -12,7 +12,11 @@ const config = {
   },
   jwt: {
     secret: process.env.JWT_SECRET || "dev-secret-change-me",
-    expiresIn: process.env.JWT_EXPIRES_IN || "24h",
+    expiresIn: process.env.JWT_EXPIRES_IN || "8h",
+    idleTimeoutMinutes:
+      parseInt(process.env.JWT_IDLE_TIMEOUT_MINUTES, 10) || 30,
+    activityRefreshSeconds:
+      parseInt(process.env.JWT_ACTIVITY_REFRESH_SECONDS, 10) || 60,
   },
   services: {
     nlp: process.env.NLP_SERVICE_URL || "http://localhost:8001",

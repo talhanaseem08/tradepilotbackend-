@@ -46,6 +46,18 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    activeSessionId: {
+      type: String,
+      default: null,
+    },
+    activeSessionStartedAt: {
+      type: Date,
+      default: null,
+    },
+    sessionLastSeenAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

@@ -4,6 +4,15 @@ const crypto = require("crypto");
 const { authenticate } = require("../middleware/auth");
 const User = require("../models/User");
 const { ValidationError } = require("../utils/errors");
+const {
+  getEmailValidationError,
+  getPasswordValidationError,
+  normalizeEmail,
+} = require("../utils/authValidation");
+const {
+  rejectUnknownFields,
+  requirePlainObject,
+} = require("../utils/requestValidation");
 
 const router = Router();
 
@@ -34,14 +43,17 @@ router.get("/me", authenticate, async (req, res, next) => {
 
 router.put("/me", authenticate, async (req, res, next) => {
   try {
-    const { email, password } = req.body || {};
+    const body = requirePlainObject(req.body);
+    rejectUnknownFields(body, ["email", "password"]);
+    const { email, password } = body;
     const updates = {};
 
     if (email != null) {
-      const normalizedEmail = String(email).trim().toLowerCase();
-      if (!normalizedEmail) {
-        throw new ValidationError("Email cannot be empty");
+      const emailError = getEmailValidationError(email);
+      if (emailError) {
+        throw new ValidationError(emailError);
       }
+      const normalizedEmail = normalizeEmail(email);
 
       const existing = await User.findOne({
         email: normalizedEmail,
@@ -55,8 +67,9 @@ router.put("/me", authenticate, async (req, res, next) => {
     }
 
     if (password != null) {
-      if (typeof password !== "string" || password.length < 8) {
-        throw new ValidationError("Password must be at least 8 characters");
+      const passwordError = getPasswordValidationError(password);
+      if (passwordError) {
+        throw new ValidationError(passwordError);
       }
       updates.passwordHash = await bcrypt.hash(password, 12);
     }

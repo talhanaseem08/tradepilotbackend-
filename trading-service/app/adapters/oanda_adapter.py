@@ -1,9 +1,7 @@
 """
 OANDA Broker Adapter — trade execution via OANDA REST API v20.
 
-Used for forex trading when MT5 is unavailable (e.g. during testing,
-or when running in a Docker container without the MT5 terminal).
-Switch back to MT5 later by updating factory.py.
+Used for live forex trading.
 """
 import httpx
 from app.adapters.broker_adapter import BrokerAdapter

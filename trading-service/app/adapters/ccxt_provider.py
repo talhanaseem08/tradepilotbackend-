@@ -1,7 +1,7 @@
 from app.adapters.data_provider import DataProvider
 from app.config.settings import settings
 from app.core.circuit_breaker import binance_breaker
-from app.services.binance_client import create_binance_exchange
+from app.services.binance_client import create_binance_exchange, fetch_binance_spot_klines
 from app.services.broker_credentials import UserBrokerCredentials
 from app.utils.retry import with_retry
 from app.utils.logger import get_logger
@@ -29,31 +29,44 @@ class CCXTProvider(DataProvider):
             secret_key=None,
             demo_mode=sandbox,
         )
+        self.demo_mode = sandbox
 
     async def fetch_candles(self, symbol: str, timeframe: str, count: int = 100) -> list[dict]:
         tf = TIMEFRAME_MAP.get(timeframe, "1h")
         formatted_symbol = self._format_symbol(symbol)
+        rest_symbol = formatted_symbol.replace("/", "")
 
         async def _fetch():
-            return await self.exchange.fetch_ohlcv(formatted_symbol, timeframe=tf, limit=count)
+            return await fetch_binance_spot_klines(
+                symbol=rest_symbol,
+                interval=tf,
+                demo_mode=self.demo_mode,
+                limit=count,
+            )
 
         try:
-            ohlcv = await binance_breaker.call(with_retry, _fetch, retries=3, delay=1.0, label=f"ccxt_candles:{formatted_symbol}")
+            klines = await binance_breaker.call(
+                with_retry,
+                _fetch,
+                retries=3,
+                delay=1.0,
+                label=f"binance_klines:{rest_symbol}",
+            )
 
             candles = [
                 {
-                    "open": row[1], "high": row[2], "low": row[3],
-                    "close": row[4], "volume": row[5],
+                    "open": float(row[1]), "high": float(row[2]), "low": float(row[3]),
+                    "close": float(row[4]), "volume": float(row[5]),
                     "timestamp": self.exchange.iso8601(row[0]),
                 }
-                for row in ohlcv
+                for row in klines
             ]
-            logger.info("ccxt candles fetched", symbol=formatted_symbol,
+            logger.info("binance candles fetched", symbol=formatted_symbol,
                         timeframe=tf, count=len(candles))
             return candles
 
         except Exception as e:
-            logger.error("ccxt candle fetch failed after retries", error=str(e), symbol=symbol)
+            logger.error("binance candle fetch failed after retries", error=str(e), symbol=symbol)
             return []
 
     async def fetch_tick(self, symbol: str) -> dict:

@@ -1,8 +1,17 @@
 from fastapi import APIRouter, HTTPException
 from app.schemas.bot import BotCreate, BotResponse, BotStatusUpdate
 from app.bots.registry import create_bot, list_bot_types
-from app.services.bot_selector import select_bot
-from app.core.redis_client import set_bot_status, get_bot_status, store_bot_params, get_losses, get_bot_params, backup_bot_params, get_backup_params
+from app.services.bot_selector import normalize_timeframe_for_bot, select_bot
+from app.core.redis_client import (
+    set_bot_status,
+    get_bot_status,
+    store_bot_params,
+    get_losses,
+    get_bot_params,
+    backup_bot_params,
+    get_backup_params,
+    delete_bot_state,
+)
 from app.models.bot_instance import create_bot_instance, update_bot_status_doc, update_bot_parameters_doc
 from app.config.database import get_db
 from app.utils.logger import get_logger
@@ -77,6 +86,11 @@ async def get_bot_types():
 
 @router.post("/", response_model=BotResponse)
 async def create_new_bot(request: BotCreate):
+    request.timeframe = normalize_timeframe_for_bot(
+        request.bot_type,
+        request.market,
+        request.timeframe,
+    )
     try:
         bot = create_bot(request.bot_type, request.symbol, request.timeframe, request.parameters)
     except ValueError as e:
@@ -192,3 +206,25 @@ async def rollback_bot_params(bot_id: str):
         "status": "rolled_back",
         "restored_parameters": backup,
     }
+
+
+@router.delete("/{bot_id}")
+async def delete_bot(bot_id: str, user_id: str | None = None):
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not connected")
+
+    query = {"botID": bot_id}
+    if user_id:
+        query["userID"] = user_id
+
+    bot = await db.bot_instances.find_one(query)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    await delete_bot_state(bot_id)
+    await db.bot_instances.delete_one({"_id": bot["_id"]})
+
+    logger.info("bot deleted", bot_id=bot_id, user_id=bot.get("userID"))
+
+    return {"bot_id": bot_id, "status": "deleted"}

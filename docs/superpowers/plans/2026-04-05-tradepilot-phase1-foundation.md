@@ -4,7 +4,7 @@
 
 **Goal:** Scaffold all 4 microservices with working inter-service communication, auth, database connections, and Docker orchestration.
 
-**Architecture:** 4 services (Node.js gateway + 3 FastAPI Python services) connected via REST, sharing MongoDB and Redis. Gateway handles auth and routing; downstream services expose health endpoints. Docker Compose orchestrates everything except Ollama (host-native) and trading-service (native Windows for MT5).
+**Architecture:** 4 services (Node.js gateway + 3 FastAPI Python services) connected via REST, sharing MongoDB and Redis. Gateway handles auth and routing; downstream services expose health endpoints. Docker Compose orchestrates the app services, MongoDB, and Redis.
 
 **Tech Stack:** Node.js 20, Express 4, Python 3.11, FastAPI, MongoDB 7 (Mongoose), Redis 7 (ioredis/aioredis), Docker Compose, JWT (jsonwebtoken), bcrypt, Winston logger, structlog
 
@@ -220,7 +220,7 @@ volumes:
   mongo_data:
 ```
 
-Note: `trading-service` is excluded from Docker Compose because it runs natively on Windows for MT5 compatibility.
+Note: `trading-service` uses API-based broker integrations and can run with the rest of the Docker Compose stack.
 
 - [ ] **Step 4: Verify files created**
 

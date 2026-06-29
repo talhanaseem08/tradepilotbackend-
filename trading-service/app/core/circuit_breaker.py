@@ -104,6 +104,5 @@ class CircuitBreaker:
 # Shared breaker instances — imported by adapters
 oanda_breaker = CircuitBreaker("oanda", failure_threshold=5, recovery_timeout=60.0)
 binance_breaker = CircuitBreaker("binance", failure_threshold=5, recovery_timeout=60.0)
-mt5_breaker = CircuitBreaker("mt5", failure_threshold=3, recovery_timeout=30.0)
 ollama_breaker = CircuitBreaker("ollama", failure_threshold=3, recovery_timeout=120.0)
 nlp_breaker = CircuitBreaker("nlp", failure_threshold=5, recovery_timeout=60.0)

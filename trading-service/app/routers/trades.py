@@ -2,6 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from app.config.database import get_db
+from app.services.binance_trade_sync import sync_binance_trade_records_for_user
 from app.services.oanda_trade_sync import sync_oanda_trade_records_for_user
 from app.utils.logger import get_logger
 
@@ -38,6 +39,10 @@ async def get_trades(
             await sync_oanda_trade_records_for_user(user_id)
         except Exception as exc:
             logger.warning("trade sync warning", user_id=user_id, error=str(exc))
+        try:
+            await sync_binance_trade_records_for_user(user_id)
+        except Exception as exc:
+            logger.warning("binance trade sync warning", user_id=user_id, error=str(exc))
 
     query = {}
     if bot_id:

@@ -2,7 +2,7 @@
 
 ## Overview
 
-TradePilot is an AI-powered automated trading platform that accepts natural language trading prompts, converts them into structured trading instructions using a fine-tuned Mistral 7B model, selects and configures rule-based trading bots, and executes trades on forex (MetaTrader 5) and crypto (Binance via CCXT) markets.
+TradePilot is an AI-powered automated trading platform that accepts natural language trading prompts, converts them into structured trading instructions using a fine-tuned Mistral 7B model, selects and configures rule-based trading bots, and executes trades on forex (OANDA) and crypto (Binance) markets.
 
 The system enforces a mandatory news sentiment gate (FinBERT) before every trade execution, monitors performance in real-time, and triggers an AI reasoning agent (DeepSeek R1) after consecutive losses to adjust bot parameters.
 
@@ -22,7 +22,7 @@ The system enforces a mandatory news sentiment gate (FinBERT) before every trade
 | Inter-service sync | REST (request/response operations) | Prompt parsing, sentiment checks, health monitoring |
 | Inter-service async | Redis Streams (pipeline operations) | Trade execution, bot monitoring, agent triggering |
 | Forex data source | OANDA API | Candles, ticks, historical data |
-| Forex execution | MetaTrader 5 Python library | Windows-only, direct broker execution |
+| Forex execution | OANDA REST API | Cross-platform broker execution |
 | Crypto data + execution | CCXT (Binance) | Data and execution from single library |
 | News sources | ForexFactory (forex, scraping) + X (forex + crypto, API + scraper fallback) + CoinTelegraph RSS (crypto) | Feed FinBERT sentiment analysis per asset class |
 | Sentiment policy | Hard gate — no trade executes without sentiment check | Risk management: never trade blind into news |
@@ -83,7 +83,7 @@ Before the system runs, these one-time steps must be completed:
                    ┌──────────┼──────────┐
                    ▼          ▼          ▼
               MongoDB      Redis     External APIs
-                                    (OANDA, MT5, Binance, X)
+                                    (OANDA, Binance, X)
 ```
 
 ---
@@ -269,7 +269,7 @@ The `/sentiment` endpoint accepts a **symbol** (not raw text). The NLP service i
 - Backtesting engine (win rate, profit %, drawdown)
 - Background data ingestion from OANDA + Binance
 - **Mandatory pre-trade sentiment gate** — calls NLP service before every execution
-- Trade execution via BrokerAdapter (MT5 / CCXT / Paper)
+- Trade execution via BrokerAdapter (OANDA / Binance / Paper)
 - P&L monitoring, consecutive loss tracking in Redis
 - Publishes to `agent.trigger` Redis Stream when losses >= 3
 - Consumes `bot.update` Redis Stream for parameter changes from agent
@@ -300,7 +300,7 @@ trading-service/
 │   │   └── registry.py           # bot type registry
 │   ├── adapters/
 │   │   ├── broker_adapter.py     # abstract BrokerAdapter interface
-│   │   ├── mt5_adapter.py        # MetaTrader 5 execution
+│   │   ├── oanda_adapter.py      # OANDA forex execution
 │   │   ├── ccxt_adapter.py       # Binance via CCXT execution
 │   │   ├── paper_adapter.py      # simulated paper trading
 │   │   ├── data_provider.py      # abstract DataProvider interface
@@ -505,7 +505,7 @@ services:
 - Agent service accesses via `http://<vm-ip>:11434`
 - VM spun up/down as needed to conserve $100 credit
 
-**MT5 constraint:** The MetaTrader 5 Python library requires the MT5 desktop terminal running on the same OS. It cannot run inside a standard Linux container. The trading-service runs **natively on Windows** (not in Docker) during development and for MT5 operations. For production, use Docker for all services except trading-service, which runs as a native Windows process. CCXT/Binance operations work in Docker regardless.
+**Broker execution:** Forex execution uses OANDA REST APIs and crypto execution uses Binance APIs, so the trading service can run without a desktop trading terminal dependency.
 
 **Other notes:**
 - FinBERT weights mounted as volume into nlp-service container at `/app/models/finbert/`
@@ -521,7 +521,7 @@ services:
 - Correlation ID generated at gateway, propagated to all downstream calls via header `X-Correlation-ID`
 
 **Circuit Breakers:**
-- Wrap OANDA, MT5, Binance, Ollama, and X API calls
+- Wrap OANDA, Binance, Ollama, and X API calls
 - States: closed (normal) → open (failing, fast-fail) → half-open (test recovery)
 - Configurable thresholds per external service
 
@@ -542,7 +542,7 @@ services:
 - No OpenAI, Anthropic, or paid APIs — all models are open-source (Mistral, FinBERT, DeepSeek)
 - Local hardware: AMD Radeon RX 6500 XT (4 GB) — no CUDA, all local inference on CPU
 - Remote hardware: AMD Developer Cloud ($100 credit) — DeepSeek R1 only
-- MetaTrader 5 Python library is Windows-only — trading-service runs natively, not in Docker
+- Broker integrations use API-based connections for forex and crypto execution
 - Bots are rule-based only — AI adjusts parameters externally, never inside bot logic
 - FinBERT sentiment is a hard gate — no trade executes without it
 - DeepSeek agent is enhancement only — system operates without it (bots pause, not crash)

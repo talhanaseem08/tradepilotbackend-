@@ -3,7 +3,7 @@ Monitor Worker — checks open trades against live prices.
 Closes trades when stop-loss or take-profit price is hit.
 Handles paper trades (in-memory PnL) and updates MongoDB records.
 
-MT5 and CCXT live trades manage SL/TP at the broker level, so this
+OANDA and Binance live trades manage SL/TP at the broker level, so this
 worker only needs to act on paper-mode open positions.
 """
 import asyncio
@@ -114,7 +114,7 @@ async def _process_market(trades: list[dict], market: str):
 
 
 async def _monitor_cycle():
-    # Only monitor paper-mode open trades — live MT5/CCXT SL/TP managed by broker
+    # Only monitor paper-mode open trades — live broker SL/TP is managed by OANDA/Binance.
     if settings.broker_mode != "paper":
         return
 

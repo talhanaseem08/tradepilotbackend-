@@ -1,6 +1,24 @@
 const { Router } = require("express");
 const { authenticate } = require("../middleware/auth");
 const { proxyRequest, checkServiceHealth } = require("../services/serviceProxy");
+const {
+  cleanObjectId,
+  cleanSafeId,
+  cleanSymbol,
+  validateBacktestBody,
+  validateBacktestRunBody,
+  validateBotCreate,
+  validateBotFromParse,
+  validateBotStatus,
+  validateForexGuardRequest,
+  validateMarketDataQuery,
+  validateParseRequest,
+  validateReportsQuery,
+  validateScriptBacktestBody,
+  validateSentimentRequest,
+  validateTradeExplanationRequest,
+  validateTradesQuery,
+} = require("../utils/requestValidation");
 
 const router = Router();
 
@@ -8,21 +26,32 @@ const router = Router();
 
 router.post("/parse", authenticate, async (req, res, next) => {
   try {
-    const result = await proxyRequest("nlp", "POST", "/parse", req.body, req.correlationId);
+    const body = validateParseRequest(req.body);
+    const result = await proxyRequest("nlp", "POST", "/parse", body, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });
 
 router.post("/sentiment", authenticate, async (req, res, next) => {
   try {
-    const result = await proxyRequest("nlp", "POST", "/sentiment", req.body, req.correlationId);
+    const body = validateSentimentRequest(req.body);
+    const result = await proxyRequest("nlp", "POST", "/sentiment", body, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });
 
 router.post("/agent/guard/forex", authenticate, async (req, res, next) => {
   try {
-    const result = await proxyRequest("agent", "POST", "/guard/forex", req.body, req.correlationId);
+    const body = validateForexGuardRequest(req.body);
+    const result = await proxyRequest("agent", "POST", "/guard/forex", body, req.correlationId);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+router.post("/agent/explain/trade", authenticate, async (req, res, next) => {
+  try {
+    const body = validateTradeExplanationRequest(req.body);
+    const result = await proxyRequest("agent", "POST", "/explain/trade", body, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });
@@ -45,7 +74,8 @@ router.get("/news/crypto", authenticate, async (req, res, next) => {
 
 router.get("/news/:symbol", authenticate, async (req, res, next) => {
   try {
-    const result = await proxyRequest("nlp", "GET", `/news/${req.params.symbol}`, null, req.correlationId);
+    const symbol = encodeURIComponent(cleanSymbol(req.params.symbol));
+    const result = await proxyRequest("nlp", "GET", `/news/${symbol}`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });
@@ -54,23 +84,31 @@ router.get("/news/:symbol", authenticate, async (req, res, next) => {
 
 router.get("/data/candles/:symbol", authenticate, async (req, res, next) => {
   try {
-    const qs = new URLSearchParams({ ...req.query, user_id: req.user.id }).toString();
-    const result = await proxyRequest("trading", "GET", `/data/candles/${req.params.symbol}?${qs}`, null, req.correlationId);
+    const input = validateMarketDataQuery(req.params, req.query, { includeTimeframe: true, includeCount: true });
+    const qs = new URLSearchParams({
+      market: input.market,
+      timeframe: input.timeframe,
+      count: String(input.count),
+      user_id: req.user.id,
+    }).toString();
+    const result = await proxyRequest("trading", "GET", `/data/candles/${encodeURIComponent(input.symbol)}?${qs}`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });
 
 router.get("/data/tick/:symbol", authenticate, async (req, res, next) => {
   try {
-    const qs = new URLSearchParams({ ...req.query, user_id: req.user.id }).toString();
-    const result = await proxyRequest("trading", "GET", `/data/tick/${req.params.symbol}?${qs}`, null, req.correlationId);
+    const input = validateMarketDataQuery(req.params, req.query);
+    const qs = new URLSearchParams({ market: input.market, user_id: req.user.id }).toString();
+    const result = await proxyRequest("trading", "GET", `/data/tick/${encodeURIComponent(input.symbol)}?${qs}`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });
 
 router.get("/data/account", authenticate, async (req, res, next) => {
   try {
-    const qs = new URLSearchParams({ ...req.query, user_id: req.user.id }).toString();
+    const market = validateMarketDataQuery({}, req.query, { symbolRequired: false }).market;
+    const qs = new URLSearchParams({ market, user_id: req.user.id }).toString();
     const result = await proxyRequest("trading", "GET", `/data/account?${qs}`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
@@ -78,7 +116,8 @@ router.get("/data/account", authenticate, async (req, res, next) => {
 
 router.get("/data/open-positions", authenticate, async (req, res, next) => {
   try {
-    const qs = new URLSearchParams({ ...req.query, user_id: req.user.id }).toString();
+    const market = validateMarketDataQuery({}, req.query, { symbolRequired: false }).market;
+    const qs = new URLSearchParams({ market, user_id: req.user.id }).toString();
     const result = await proxyRequest("trading", "GET", `/data/open-positions?${qs}`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
@@ -88,7 +127,7 @@ router.get("/data/open-positions", authenticate, async (req, res, next) => {
 
 router.post("/bots/from-parse", authenticate, async (req, res, next) => {
   try {
-    const body = { ...req.body, user_id: req.user.id };
+    const body = { ...validateBotFromParse(req.body), user_id: req.user.id };
     const result = await proxyRequest("trading", "POST", "/bots/from-parse", body, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
@@ -104,7 +143,7 @@ router.get("/bots/types", authenticate, async (req, res, next) => {
 router.post("/bots", authenticate, async (req, res, next) => {
   try {
     // Inject authenticated user_id so trading-service links bot to the right user
-    const body = { ...req.body, user_id: req.user.id };
+    const body = { ...validateBotCreate(req.body), user_id: req.user.id };
     const result = await proxyRequest("trading", "POST", "/bots/", body, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
@@ -120,21 +159,34 @@ router.get("/bots", authenticate, async (req, res, next) => {
 
 router.get("/bots/:botId", authenticate, async (req, res, next) => {
   try {
-    const result = await proxyRequest("trading", "GET", `/bots/${req.params.botId}`, null, req.correlationId);
+    const botId = cleanSafeId(req.params.botId, "botId");
+    const result = await proxyRequest("trading", "GET", `/bots/${encodeURIComponent(botId)}`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });
 
 router.patch("/bots/:botId/status", authenticate, async (req, res, next) => {
   try {
-    const result = await proxyRequest("trading", "PATCH", `/bots/${req.params.botId}/status`, req.body, req.correlationId);
+    const botId = cleanSafeId(req.params.botId, "botId");
+    const body = validateBotStatus(req.body);
+    const result = await proxyRequest("trading", "PATCH", `/bots/${encodeURIComponent(botId)}/status`, body, req.correlationId);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+router.delete("/bots/:botId", authenticate, async (req, res, next) => {
+  try {
+    const botId = cleanSafeId(req.params.botId, "botId");
+    const qs = new URLSearchParams({ user_id: req.user.id }).toString();
+    const result = await proxyRequest("trading", "DELETE", `/bots/${encodeURIComponent(botId)}?${qs}`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });
 
 router.post("/bots/:botId/rollback", authenticate, async (req, res, next) => {
   try {
-    const result = await proxyRequest("trading", "POST", `/bots/${req.params.botId}/rollback`, null, req.correlationId);
+    const botId = cleanSafeId(req.params.botId, "botId");
+    const result = await proxyRequest("trading", "POST", `/bots/${encodeURIComponent(botId)}/rollback`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });
@@ -165,7 +217,8 @@ router.post("/trading/debug/test-oanda-execute", authenticate, async (req, res, 
 
 router.get("/trades", authenticate, async (req, res, next) => {
   try {
-    const qs = new URLSearchParams({ ...req.query, user_id: req.user.id }).toString();
+    const input = validateTradesQuery(req.query);
+    const qs = new URLSearchParams({ ...input, user_id: req.user.id }).toString();
     const result = await proxyRequest("trading", "GET", `/trades?${qs}`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
@@ -176,11 +229,12 @@ router.get("/trades", authenticate, async (req, res, next) => {
 /** Script-style backtest (flat path — avoids 404 on older gateways where nested `/backtest/script-run` was missing). */
 const scriptBacktestHandler = async (req, res, next) => {
   try {
+    const body = validateScriptBacktestBody(req.body);
     const result = await proxyRequest(
       "trading",
       "POST",
       "/backtest/script-run",
-      { ...req.body, user_id: req.user.id },
+      { ...body, user_id: req.user.id },
       req.correlationId
     );
     res.json(result);
@@ -191,17 +245,11 @@ router.post("/backtest-script-run", authenticate, scriptBacktestHandler);
 /** Fetch candles on the trading service, then run backtest — one round trip from the client. */
 router.post("/backtest/run", authenticate, async (req, res, next) => {
   try {
-    const { bot_type, symbol, market, timeframe, parameters, count } = req.body || {};
-    if (!bot_type || !symbol || !market || !timeframe) {
-      return res.status(400).json({
-        error: { message: "bot_type, symbol, market, and timeframe are required" },
-      });
-    }
-    const c = Math.min(Math.max(parseInt(String(count || 200), 10) || 200, 1), 1000);
+    const { bot_type, symbol, market, timeframe, parameters, count } = validateBacktestRunBody(req.body);
     const qs = new URLSearchParams({
-      market: String(market),
-      timeframe: String(timeframe),
-      count: String(c),
+      market,
+      timeframe,
+      count: String(count),
     }).toString();
     const enc = encodeURIComponent(symbol);
     const candlesPayload = await proxyRequest(
@@ -247,7 +295,8 @@ router.post("/trading/debug/test-binance-execute", authenticate, async (req, res
 
 router.post("/backtest", authenticate, async (req, res, next) => {
   try {
-    const result = await proxyRequest("trading", "POST", "/backtest", req.body, req.correlationId);
+    const body = validateBacktestBody(req.body);
+    const result = await proxyRequest("trading", "POST", "/backtest", body, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });
@@ -257,7 +306,7 @@ router.post("/backtest/script-run", authenticate, scriptBacktestHandler);
 
 router.get("/backtest/reports", authenticate, async (req, res, next) => {
   try {
-    const qs = new URLSearchParams(req.query).toString();
+    const qs = new URLSearchParams(validateReportsQuery(req.query)).toString();
     const result = await proxyRequest("trading", "GET", `/backtest/reports?${qs}`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
@@ -265,33 +314,8 @@ router.get("/backtest/reports", authenticate, async (req, res, next) => {
 
 router.get("/backtest/reports/:reportId", authenticate, async (req, res, next) => {
   try {
-    const result = await proxyRequest("trading", "GET", `/backtest/reports/${req.params.reportId}`, null, req.correlationId);
-    res.json(result);
-  } catch (err) { next(err); }
-});
-
-// ── Optimization Logs ─────────────────────────────────────────────────────────
-
-router.get("/optimization-logs", authenticate, async (req, res, next) => {
-  try {
-    const qs = new URLSearchParams(req.query).toString();
-    const result = await proxyRequest("agent", "GET", `/optimization-logs?${qs}`, null, req.correlationId);
-    res.json(result);
-  } catch (err) { next(err); }
-});
-
-// ── PPO Optimizer ─────────────────────────────────────────────────────────────
-
-router.post("/ppo/train", authenticate, async (req, res, next) => {
-  try {
-    const result = await proxyRequest("agent", "POST", "/ppo/train", req.body, req.correlationId);
-    res.json(result);
-  } catch (err) { next(err); }
-});
-
-router.get("/ppo/status", authenticate, async (req, res, next) => {
-  try {
-    const result = await proxyRequest("agent", "GET", "/ppo/status", null, req.correlationId);
+    const reportId = cleanObjectId(req.params.reportId, "reportId");
+    const result = await proxyRequest("trading", "GET", `/backtest/reports/${encodeURIComponent(reportId)}`, null, req.correlationId);
     res.json(result);
   } catch (err) { next(err); }
 });

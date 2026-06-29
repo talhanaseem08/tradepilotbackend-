@@ -6,7 +6,7 @@ For each active bot:
   1. Load latest params from Redis
   2. Fetch candles from data provider
   3. Call bot.analyze() → buy / sell / hold
-  4. Cross-bot risk guard (max open trades, no duplicate symbol)
+  4. Cross-bot risk guard (max open trades)
   5. Sentiment gate → trade execution
   6. Save TradeRecord, update consecutive-loss counter
 """
@@ -14,12 +14,15 @@ For each active bot:
 import asyncio
 from app.config.database import get_db
 from app.config.settings import settings
-from app.core.redis_client import get_bot_params
+from app.core.redis_client import get_bot_params, get_bot_runtime_value, set_bot_runtime_value
 from app.bots.registry import create_bot
 from app.adapters.factory import create_broker, create_data_provider
+from app.adapters.ccxt_adapter import CCXTBrokerAdapter
 from app.services.data_ingestion import get_cached_candles
+from app.services.bot_selector import normalize_timeframe_for_bot
 from app.services.broker_credentials import get_user_broker_credentials
 from app.services.cryptobots_runtime_adapter import (
+    CRYPTO_HIGH_POSITION_PCT,
     build_cryptobot_trade_signal,
     is_cryptobot_type,
     required_cryptobot_candle_count,
@@ -35,6 +38,7 @@ logger = get_logger()
 # One paper broker instance per user — keeps balance state across cycles
 _paper_brokers: dict[str, PaperBrokerAdapter] = {}
 _worker_task: asyncio.Task | None = None
+_ACTIVE_TRADE_STATUSES = ["open", "filled", "active", "pending", "partially_filled"]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -55,12 +59,18 @@ def _cast(v: str):
         return v
 
 
-async def _cross_bot_risk_check(user_id: str | None, symbol: str) -> tuple[bool, str]:
+async def _cross_bot_risk_check(
+    user_id: str | None,
+    symbol: str,
+    *,
+    market: str,
+    action: str,
+    broker=None,
+) -> tuple[bool, str]:
     """
     Returns (allowed, reason).
     Blocks a new trade if:
       - user already has max open trades
-      - user already has an open position on this exact symbol
     """
     if not user_id:
         return True, ""
@@ -70,16 +80,10 @@ async def _cross_bot_risk_check(user_id: str | None, symbol: str) -> tuple[bool,
         return True, ""
 
     open_count = await db.trade_records.count_documents(
-        {"userID": user_id, "status": "open"}
+        {"userID": user_id, "status": {"$in": _ACTIVE_TRADE_STATUSES}}
     )
     if open_count >= settings.max_open_trades_per_user:
         return False, f"max open trades ({settings.max_open_trades_per_user}) reached"
-
-    duplicate = await db.trade_records.find_one(
-        {"userID": user_id, "symbol": symbol.upper(), "status": "open"}
-    )
-    if duplicate:
-        return False, f"open position already exists for {symbol}"
 
     return True, ""
 
@@ -93,6 +97,7 @@ async def _execute_bot(bot_doc: dict):
     market      = bot_doc.get("market", "forex")
     timeframe   = bot_doc.get("timeframe", "1h")
     strategy    = bot_doc["strategyType"]
+    timeframe   = normalize_timeframe_for_bot(strategy, market, timeframe)
 
     # Always use latest params from Redis (agent may have optimized them)
     redis_raw = await get_bot_params(bot_id)
@@ -130,6 +135,31 @@ async def _execute_bot(bot_doc: dict):
         if is_cryptobot_type(strategy):
             provider = create_data_provider(market, broker_credentials)
             for target_symbol in target_symbols:
+                strategy_parameters = dict(parameters)
+                if strategy == "crypto_high" and isinstance(broker, CCXTBrokerAdapter):
+                    try:
+                        balance_info = await broker.get_account_balance()
+                        equity = float(balance_info.get("balance") or 0)
+                        quote_usdt = float(balance_info.get("free") or 0)
+                        if quote_usdt <= 0:
+                            quote_usdt = float(balance_info.get("balance") or 0)
+                        if equity <= 0:
+                            free_amount = float(balance_info.get("free") or 0)
+                            used_amount = float(balance_info.get("used") or 0)
+                            if free_amount > 0 or used_amount > 0:
+                                equity = free_amount + used_amount
+                        strategy_parameters["account_equity_usd"] = equity
+                        strategy_parameters["quote_balance_usdt"] = quote_usdt
+                        strategy_parameters.setdefault("risk_per_trade_pct", CRYPTO_HIGH_POSITION_PCT)
+                    except Exception as exc:
+                        logger.warning(
+                            "crypto_high could not read account balance for sizing",
+                            bot_id=bot_id,
+                            user_id=user_id,
+                            market=market,
+                            symbol=target_symbol,
+                            error=str(exc),
+                        )
                 candle_count = required_cryptobot_candle_count(strategy)
                 candles = await get_cached_candles(target_symbol, timeframe, market)
                 if not candles or len(candles) < candle_count:
@@ -149,7 +179,7 @@ async def _execute_bot(bot_doc: dict):
                     signal = build_cryptobot_trade_signal(
                         bot_type=strategy,
                         symbol=target_symbol,
-                        parameters=parameters,
+                        parameters=strategy_parameters,
                         candles=candles,
                     )
                 except Exception as e:
@@ -174,6 +204,22 @@ async def _execute_bot(bot_doc: dict):
                     )
                     continue
 
+                if strategy == "crypto_high" and candles:
+                    entry_bar_time = str(candles[-1].get("timestamp") or "").strip()
+                    if entry_bar_time:
+                        runtime_key = f"last_entry_bar:{target_symbol.upper()}"
+                        last_entry_bar = await get_bot_runtime_value(bot_id, runtime_key)
+                        if last_entry_bar == entry_bar_time:
+                            logger.info(
+                                "crypto_high already traded this entry bar; skipping",
+                                bot_id=bot_id,
+                                user_id=user_id,
+                                market=market,
+                                symbol=target_symbol,
+                                entry_bar_time=entry_bar_time,
+                            )
+                            continue
+
                 logger.info(
                     "cryptobot trade signal built",
                     bot_id=bot_id,
@@ -188,7 +234,13 @@ async def _execute_bot(bot_doc: dict):
                     take_profit=signal.take_profit,
                 )
 
-                allowed, reason = await _cross_bot_risk_check(user_id, target_symbol)
+                allowed, reason = await _cross_bot_risk_check(
+                    user_id,
+                    target_symbol,
+                    market=market,
+                    action=signal.action,
+                    broker=broker,
+                )
                 if not allowed:
                     logger.warning(
                         "trade blocked by risk guard",
@@ -219,6 +271,15 @@ async def _execute_bot(bot_doc: dict):
                     )
                     continue
 
+                if strategy == "crypto_high" and candles:
+                    entry_bar_time = str(candles[-1].get("timestamp") or "").strip()
+                    if entry_bar_time:
+                        await set_bot_runtime_value(
+                            bot_id,
+                            f"last_entry_bar:{target_symbol.upper()}",
+                            entry_bar_time,
+                        )
+
                 logger.info(
                     "trade executed",
                     bot_id=bot_id,
@@ -239,7 +300,7 @@ async def _execute_bot(bot_doc: dict):
             return
 
         # Fetch latest candles — try cache first, fall back to live API
-        candles = await get_cached_candles(symbol, timeframe, market)
+        candles = await get_cached_candles(symbol, timeframe, market, user_id=user_id)
         if not candles or len(candles) < 100:
             provider = create_data_provider(market, broker_credentials)
             candles = await provider.fetch_candles(symbol, timeframe, count=100)
@@ -257,6 +318,14 @@ async def _execute_bot(bot_doc: dict):
         # Re-run strategy analysis now that candles are loaded
         direction = bot.analyze(candles)
         if direction == "hold":
+            logger.info(
+                "forex bot produced no trade signal",
+                bot_id=bot_id,
+                user_id=user_id,
+                strategy=strategy,
+                market=market,
+                symbol=symbol,
+            )
             return
 
         current_price = float(candles[-1].get("close", 0))
@@ -269,7 +338,27 @@ async def _execute_bot(bot_doc: dict):
             quantity=bot.calculate_position_size(balance=settings.paper_initial_balance),
         )
 
-        allowed, reason = await _cross_bot_risk_check(user_id, symbol)
+        logger.info(
+            "forex trade signal built",
+            bot_id=bot_id,
+            user_id=user_id,
+            strategy=strategy,
+            market=market,
+            symbol=symbol,
+            action=signal.action,
+            price=signal.price,
+            quantity=signal.quantity,
+            stop_loss=signal.stop_loss,
+            take_profit=signal.take_profit,
+        )
+
+        allowed, reason = await _cross_bot_risk_check(
+            user_id,
+            symbol,
+            market=market,
+            action=signal.action,
+            broker=broker,
+        )
         if not allowed:
             logger.warning(
                 "trade blocked by risk guard",

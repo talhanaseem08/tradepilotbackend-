@@ -63,6 +63,8 @@ DEFAULT_PARAMS: dict[str, dict] = {
         "pivot_len": 5,
     },
     "crypto_high": {
+        "position_pct_of_available_balance": 10.0,
+        "risk_per_trade_pct": 10.0,
         "risk_per_trade_usd": 1000.0,
         "atr_stop_mult": 1.5,
         "atr_tp_mult": 3.0,
@@ -72,6 +74,16 @@ DEFAULT_PARAMS: dict[str, dict] = {
 DEFAULT_TIMEFRAME: dict[str, str] = {
     "forex": "1h",
     "crypto": "4h",
+}
+
+FOREX_DEFAULT_TIMEFRAME_BY_STRATEGY: dict[str, str] = {
+    "medium_risk": "5m",
+}
+
+CRYPTO_DEFAULT_TIMEFRAME: dict[str, str] = {
+    "crypto_low": "1d",
+    "crypto_medium": "4h",
+    "crypto_high": "1h",
 }
 
 # Each bot class only accepts certain symbols (see ALLOWED_SYMBOLS on bot classes).
@@ -115,6 +127,21 @@ def _normalize_forex_symbol(bot_type: str, symbol: str) -> str:
     return s
 
 
+def default_timeframe_for_bot(bot_type: str, market: str) -> str:
+    if market == "crypto":
+        return CRYPTO_DEFAULT_TIMEFRAME.get(bot_type, DEFAULT_TIMEFRAME["crypto"])
+    return FOREX_DEFAULT_TIMEFRAME_BY_STRATEGY.get(
+        bot_type,
+        DEFAULT_TIMEFRAME.get(market, "1h"),
+    )
+
+
+def normalize_timeframe_for_bot(bot_type: str, market: str, timeframe: str | None) -> str:
+    if market != "crypto" and bot_type in FOREX_DEFAULT_TIMEFRAME_BY_STRATEGY:
+        return FOREX_DEFAULT_TIMEFRAME_BY_STRATEGY[bot_type]
+    return timeframe or default_timeframe_for_bot(bot_type, market)
+
+
 def select_bot(parse_result: dict) -> dict:
     """
     Convert NLP parse result to a BotCreate-compatible dict.
@@ -142,7 +169,10 @@ def select_bot(parse_result: dict) -> dict:
     symbol = (parse_result.get("symbol") or default_symbol).upper()
     if market != "crypto":
         symbol = _normalize_forex_symbol(bot_type, symbol)
-    timeframe = parse_result.get("timeframe") or DEFAULT_TIMEFRAME.get(market, "1h")
+    timeframe = parse_result.get("timeframe")
+    if not timeframe:
+        timeframe = default_timeframe_for_bot(bot_type, market)
+    timeframe = normalize_timeframe_for_bot(bot_type, market, timeframe)
 
     params = dict(DEFAULT_PARAMS[bot_type])
 

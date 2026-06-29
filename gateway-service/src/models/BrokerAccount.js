@@ -9,17 +9,11 @@ const brokerAccountSchema = new mongoose.Schema(
     },
     brokerName: {
       type: String,
-      enum: ["mt5", "oanda", "binance"],
+      enum: ["oanda", "binance"],
       required: true,
     },
-    // Generic diagram fields
     apiKey: { type: String, default: null },     // OANDA apiKey / Binance apiKey (encrypted)
     secretKey: { type: String, default: null },  // Binance apiSecret (encrypted)
-
-    // MT5-specific
-    login: { type: Number, default: null },
-    passwordHash: { type: String, default: null },
-    server: { type: String, default: null },
 
     // OANDA-specific
     accountId: { type: String, default: null },

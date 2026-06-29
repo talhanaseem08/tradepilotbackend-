@@ -11,67 +11,6 @@ from app.utils.logger import get_logger
 logger = get_logger()
 
 
-async def verify_mt5_connection(login: int, password: str, server: str) -> VerifyResponse:
-    """
-    Verify MT5 connection by attempting to connect with user credentials.
-    Note: This requires MetaTrader 5 to be installed and running.
-    """
-    try:
-        # Import MT5 library (only works on Windows with MT5 installed)
-        import MetaTrader5 as mt5
-        
-        # Initialize MT5
-        if not mt5.initialize():
-            return VerifyResponse(
-                success=False,
-                error="Failed to initialize MT5. Please ensure MetaTrader 5 is installed and running."
-            )
-        
-        # Attempt to login
-        if not mt5.login(login, password, server):
-            error_code = mt5.last_error()
-            mt5.shutdown()
-            return VerifyResponse(
-                success=False,
-                error=f"MT5 login failed: {error_code}"
-            )
-        
-        # Get account info
-        account_info = mt5.account_info()
-        if account_info is None:
-            mt5.shutdown()
-            return VerifyResponse(
-                success=False,
-                error="Failed to retrieve account information"
-            )
-        
-        balance = account_info.balance
-        equity = account_info.equity
-        
-        mt5.shutdown()
-        
-        logger.info("MT5 connection verified", login=login, server=server, balance=balance)
-        
-        return VerifyResponse(
-            success=True,
-            balance=balance,
-            equity=equity,
-            currency="USD"  # Most MT5 accounts are USD
-        )
-        
-    except ImportError:
-        return VerifyResponse(
-            success=False,
-            error="MetaTrader 5 library not available. Please install MetaTrader 5."
-        )
-    except Exception as e:
-        logger.error("MT5 verification error", error=str(e))
-        return VerifyResponse(
-            success=False,
-            error=f"MT5 verification failed: {str(e)}"
-        )
-
-
 async def verify_oanda_connection(api_key: str, account_id: str, environment: str) -> VerifyResponse:
     """
     Verify OANDA connection by checking account info.

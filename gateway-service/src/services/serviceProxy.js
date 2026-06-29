@@ -9,13 +9,25 @@ const serviceClients = {
   agent: axios.create({ baseURL: config.services.agent, timeout: 30000 }),
 };
 
-/** Shown on ECONNREFUSED so operators fix the right upstream (calendar/news use NLP, not trading). */
-const UPSTREAM_HINT = {
-  nlp: "NLP_SERVICE_URL=http://localhost:8001; in Docker Compose use http://nlp-service:8001",
-  trading:
-    "TRADING_SERVICE_URL=http://localhost:8002; in Docker Compose use http://trading-service:8002",
-  agent: "AGENT_SERVICE_URL=http://localhost:8003; in Docker Compose use http://agent-service:8003",
+const SERVICE_UNAVAILABLE_MESSAGE = {
+  nlp: "AI service is temporarily unavailable. Please try again in a moment.",
+  trading: "Trading service is temporarily unavailable. Please try again in a moment.",
+  agent: "Safety check service is temporarily unavailable. Please try again in a moment.",
 };
+
+function friendlyMessageForStatus(serviceName, status) {
+  if (status === 400 || status === 422) {
+    return "Some information is missing or invalid. Please check and try again.";
+  }
+  if (status === 401) return "Please sign in again.";
+  if (status === 403) return "You do not have permission to do that.";
+  if (status === 404) return "We could not find the requested item.";
+  if (status === 429) return "Too many requests. Please wait a moment and try again.";
+  if (status >= 500) {
+    return SERVICE_UNAVAILABLE_MESSAGE[serviceName] || "A service is temporarily unavailable. Please try again in a moment.";
+  }
+  return "Something went wrong. Please try again.";
+}
 
 async function proxyRequest(serviceName, method, path, data, correlationId) {
   const client = serviceClients[serviceName];
@@ -34,30 +46,19 @@ async function proxyRequest(serviceName, method, path, data, correlationId) {
   } catch (err) {
     const status = err.response?.status || 502;
     const data = err.response?.data;
-    let message = `${serviceName} service unavailable`;
-    if (data) {
-      if (typeof data.detail === "string") {
-        message = data.detail;
-      } else if (Array.isArray(data.detail) && data.detail[0]?.msg) {
-        message = data.detail[0].msg;
-      } else if (data.error?.message) {
-        message = data.error.message;
-      }
-    } else if (err.code === "ECONNREFUSED" || err.code === "ENOTFOUND") {
-      const hint = UPSTREAM_HINT[serviceName] || "check NLP_SERVICE_URL, TRADING_SERVICE_URL, AGENT_SERVICE_URL";
-      message = `${serviceName} unreachable (${err.code}). Is it running? For gateway on the host set ${hint}.`;
-    } else if (err.message && !data) {
-      message = `${serviceName} service unavailable: ${err.message}`;
-    }
     logger.error({
       message: "Service proxy error",
       serviceName,
+      method,
       path,
       status,
+      code: err.code,
       error: err.message,
+      upstreamData: data,
+      stack: err.stack,
       correlationId,
     });
-    const proxyError = new Error(message);
+    const proxyError = new Error(friendlyMessageForStatus(serviceName, status));
     proxyError.statusCode = status;
     proxyError.isOperational = true;
     throw proxyError;

@@ -13,7 +13,7 @@ This folder holds **specs and sample data** that match the **Trading History** U
 
 The **in-app** screen is **`Trade Journal`** in the React app:
 
-`frontend template/wowdash-react-typescript-shadcn/src/pages/trade-journal/TradeJournal.tsx`
+`frontend/src/pages/trade-journal/TradeJournal.tsx`
 
 It includes:
 

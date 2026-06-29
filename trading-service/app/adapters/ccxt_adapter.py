@@ -7,7 +7,9 @@ from app.services.binance_client import (
     fetch_binance_spot_exchange_info,
     fetch_binance_spot_prices,
     get_binance_lot_size_filters,
+    get_binance_price_filter,
     place_binance_spot_market_order,
+    quantize_binance_price,
     quantize_binance_quantity,
 )
 from app.services.broker_credentials import UserBrokerCredentials
@@ -42,6 +44,7 @@ class CCXTBrokerAdapter(BrokerAdapter):
         formatted = self._format_symbol(symbol)
         rest_symbol = formatted.replace("/", "")
         normalized_quantity = quantity
+        symbol_info: dict = {}
 
         try:
             if order_type == "market":
@@ -83,7 +86,8 @@ class CCXTBrokerAdapter(BrokerAdapter):
                 if executed_qty > 0
                 else order.get("average") or order.get("price", 0)
             )
-            order_id = order.get("orderId") or order.get("id")
+            raw_order_id = order.get("orderId") or order.get("id")
+            order_id = str(raw_order_id) if raw_order_id is not None else None
 
             result = {
                 "order_id": order_id,
@@ -103,20 +107,34 @@ class CCXTBrokerAdapter(BrokerAdapter):
             # Place OCO (stop-loss + take-profit) on the closing side
             if stop_loss and take_profit and fill_price:
                 close_side = "sell" if side == "buy" else "buy"
+                tick_size = get_binance_price_filter(symbol_info)
+                normalized_take_profit = quantize_binance_price(
+                    float(take_profit),
+                    tick_size=tick_size,
+                )
+                normalized_stop_loss = quantize_binance_price(
+                    float(stop_loss),
+                    tick_size=tick_size,
+                )
                 try:
                     oco = await self.exchange.privatePostOrderOco({
                         "symbol": rest_symbol,
                         "side": close_side.upper(),
                         "quantity": str(result["quantity"]),
-                        "price": str(take_profit),
-                        "stopPrice": str(stop_loss),
-                        "stopLimitPrice": str(stop_loss),
+                        "price": str(normalized_take_profit),
+                        "stopPrice": str(normalized_stop_loss),
+                        "stopLimitPrice": str(normalized_stop_loss),
                         "stopLimitTimeInForce": "GTC",
                     })
-                    result["oco_order_id"] = oco.get("orderListId")
+                    raw_oco_id = oco.get("orderListId")
+                    result["oco_order_id"] = (
+                        str(raw_oco_id) if raw_oco_id is not None else None
+                    )
                     logger.info("ccxt OCO placed", oco_id=result["oco_order_id"],
-                                sl=stop_loss, tp=take_profit)
+                                sl=normalized_stop_loss, tp=normalized_take_profit)
                 except Exception as oco_err:
+                    result["protection_status"] = "failed"
+                    result["protection_error"] = str(oco_err)
                     logger.warning("ccxt OCO failed (main order still placed)",
                                    error=str(oco_err), symbol=symbol)
 

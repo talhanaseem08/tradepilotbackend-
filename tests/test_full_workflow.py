@@ -8,8 +8,6 @@ Tests the complete TradePilot pipeline:
   3. Bot creation and analysis
   4. Sentiment gate (mock NLP → allow trade)
   5. Trade execution via paper broker
-  6. 3-loss → agent trigger chain
-  7. Finetuned bot file generation via trading-service API
 
 Run against the live stack:
   docker compose up
@@ -249,80 +247,7 @@ class TestPaperTradeExecution:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 6. 3-loss → agent trigger chain (in-process, mocked Redis)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-class TestThreeLossChain:
-    @pytest.mark.asyncio
-    async def test_three_losses_trigger_agent(self):
-        from app.services.performance_monitor import record_trade_result
-
-        bot_id = "workflow_test_bot"
-        call_count = {"n": 0}
-
-        async def mock_increment(bid):
-            call_count["n"] += 1
-            return call_count["n"]
-
-        with patch("app.services.performance_monitor.increment_losses",
-                   side_effect=mock_increment), \
-             patch("app.services.performance_monitor.reset_losses", new_callable=AsyncMock), \
-             patch("app.services.performance_monitor.set_bot_status", new_callable=AsyncMock), \
-             patch("app.services.performance_monitor.publish_agent_trigger",
-                   new_callable=AsyncMock) as mock_pub:
-
-            r1 = await record_trade_result(bot_id, pnl=-10.0, bot_type="low_risk")
-            r2 = await record_trade_result(bot_id, pnl=-20.0, bot_type="low_risk")
-            r3 = await record_trade_result(bot_id, pnl=-30.0, bot_type="low_risk")
-
-        assert r1["action"] == "continue"
-        assert r2["action"] == "continue"
-        assert r3["action"] == "trigger_agent"
-        assert r3["consecutive_losses"] == 3
-        mock_pub.assert_called_once()
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 7. Finetuned bot file API (requires trading-service running on :8002)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-class TestFinetuneEndpoint:
-    @requires_stack
-    def test_finetune_endpoint_creates_file(self):
-        payload = {
-            "bot_id": "workflow_test_bot",
-            "bot_type": "low_risk",
-            "old_parameters": {"risk_per_trade_pct": 1.0},
-            "new_parameters": {"risk_per_trade_pct": 0.7, "max_wait_hours": 2.0},
-            "reasoning": "Integration test - reducing risk after losses",
-            "consecutive_losses": 3,
-        }
-        resp = httpx.post("http://localhost:8002/bots/finetune",
-                          json=payload, timeout=15)
-        assert resp.status_code == 200, f"Got {resp.status_code}: {resp.text}"
-        data = resp.json()
-        assert "file_path" in data
-        file_path = Path(data["file_path"])
-        assert file_path.exists()
-        assert "low_risk" in file_path.name
-        assert "finetuned" in file_path.name
-        print(f"\nFinetuned file: {file_path}")
-        # Cleanup
-        file_path.unlink(missing_ok=True)
-
-    @requires_stack
-    def test_finetune_unknown_bot_type_returns_400(self):
-        payload = {
-            "bot_id": "test", "bot_type": "ghost_bot",
-            "old_parameters": {}, "new_parameters": {},
-            "reasoning": "test", "consecutive_losses": 3,
-        }
-        resp = httpx.post("http://localhost:8002/bots/finetune", json=payload, timeout=10)
-        assert resp.status_code == 400
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 8. DeepSeek cloud connectivity
+# 6. DeepSeek cloud connectivity
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestDeepSeekCloud:

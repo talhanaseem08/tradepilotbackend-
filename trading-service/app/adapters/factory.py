@@ -23,7 +23,6 @@ def create_broker(
         logger.info("using CCXT/Binance broker", mode=broker_mode)
         return CCXTBrokerAdapter(credentials)
 
-    # MT5 requires Windows terminal — use OANDA REST for forex execution instead
     from app.adapters.oanda_adapter import OandaBrokerAdapter
     logger.info("using OANDA broker", mode=broker_mode)
     return OandaBrokerAdapter(credentials)

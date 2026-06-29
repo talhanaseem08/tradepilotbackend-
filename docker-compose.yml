@@ -65,8 +65,6 @@ services:
       - .env
     environment:
       NLP_SERVICE_URL: http://nlp-service:8001
-    volumes:
-      - finetuned_bots:/app/app/bots/finetuned
     depends_on:
       mongodb:
         condition: service_healthy
@@ -85,8 +83,6 @@ services:
       - .env
     environment:
       TRADING_SERVICE_URL: http://trading-service:8002
-    volumes:
-      - ppo_models:/app/models
     depends_on:
       mongodb:
         condition: service_healthy
@@ -99,5 +95,3 @@ services:
 
 volumes:
   mongo_data:
-  ppo_models:
-  finetuned_bots:

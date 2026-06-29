@@ -8,6 +8,16 @@ const { AppError, ValidationError, UnauthorizedError } = require("../utils/error
 const logger = require("../utils/logger");
 const { sendPasswordResetEmail } = require("../services/email");
 const { proxyRequest } = require("../services/serviceProxy");
+const {
+  getEmailValidationError,
+  getPasswordValidationError,
+  normalizeEmail,
+} = require("../utils/authValidation");
+const {
+  cleanString,
+  rejectUnknownFields,
+  requirePlainObject,
+} = require("../utils/requestValidation");
 
 /** Trim and strip wrapping quotes — mismatched audience breaks verifyIdToken. */
 function normalizeGoogleClientId(raw) {
@@ -22,38 +32,44 @@ function normalizeGoogleClientId(raw) {
   return s.length ? s : null;
 }
 
-function getPasswordValidationError(password) {
-  if (typeof password !== "string" || password.length < 8) {
-    return "Password must be at least 8 characters";
-  }
-  if (!/[a-z]/.test(password)) {
-    return "Password must include at least one lowercase character";
-  }
-  if (!/[A-Z]/.test(password)) {
-    return "Password must include at least one uppercase character";
-  }
-  if (!/\d/.test(password)) {
-    return "Password must include at least one number";
-  }
-  if (!/[^A-Za-z0-9]/.test(password)) {
-    return "Password must include at least one special character";
-  }
-  return null;
+async function issueSessionForUser(user) {
+  const sessionId = uuidv4().replace(/-/g, "");
+  const now = new Date();
+
+  user.activeSessionId = sessionId;
+  user.activeSessionStartedAt = now;
+  user.sessionLastSeenAt = now;
+  await user.save();
+
+  return signToken({
+    id: user._id,
+    email: user.email,
+    role: user.role,
+    sid: sessionId,
+  });
 }
 
 async function register(req, res, next) {
   try {
-    const { email, password } = req.body;
+    const body = requirePlainObject(req.body);
+    rejectUnknownFields(body, ["email", "password"]);
+    const { email, password } = body;
     if (!email || !password) {
       throw new ValidationError("Email and password are required");
     }
+
+    const emailError = getEmailValidationError(email);
+    if (emailError) {
+      throw new ValidationError(emailError);
+    }
+    const normalizedEmail = normalizeEmail(email);
 
     const passwordError = getPasswordValidationError(password);
     if (passwordError) {
       throw new ValidationError(passwordError);
     }
 
-    const existing = await User.findOne({ email });
+    const existing = await User.findOne({ email: normalizedEmail });
     if (existing) {
       throw new ValidationError("Email already registered");
     }
@@ -61,10 +77,14 @@ async function register(req, res, next) {
     const passwordHash = await bcrypt.hash(password, 12);
     const apiKey = `tp_${uuidv4().replace(/-/g, "")}`;
 
-    const user = await User.create({ email, passwordHash, apiKey });
-    const token = signToken({ id: user._id, email: user.email, role: user.role });
+    const user = await User.create({ email: normalizedEmail, passwordHash, apiKey });
+    const token = await issueSessionForUser(user);
 
-    logger.info({ message: "User registered", email, correlationId: req.correlationId });
+    logger.info({
+      message: "User registered",
+      email: normalizedEmail,
+      correlationId: req.correlationId,
+    });
 
     res.status(201).json({
       token,
@@ -116,12 +136,20 @@ function resolveNextPath({ onboardingCompleted, botCount }) {
 
 async function login(req, res, next) {
   try {
-    const { email, password } = req.body;
+    const body = requirePlainObject(req.body);
+    rejectUnknownFields(body, ["email", "password"]);
+    const { email, password } = body;
     if (!email || !password) {
       throw new ValidationError("Email and password are required");
     }
 
-    const user = await User.findOne({ email });
+    const emailError = getEmailValidationError(email);
+    if (emailError) {
+      throw new ValidationError(emailError);
+    }
+    const normalizedEmail = normalizeEmail(email);
+
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
       throw new UnauthorizedError("Invalid credentials");
     }
@@ -135,9 +163,13 @@ async function login(req, res, next) {
       throw new UnauthorizedError("Invalid credentials");
     }
 
-    const token = signToken({ id: user._id, email: user.email, role: user.role });
+    const token = await issueSessionForUser(user);
 
-    logger.info({ message: "User logged in", email, correlationId: req.correlationId });
+    logger.info({
+      message: "User logged in",
+      email: normalizedEmail,
+      correlationId: req.correlationId,
+    });
 
     res.json({
       token,
@@ -152,16 +184,19 @@ async function googleLogin(req, res, next) {
   try {
     const googleClientId = normalizeGoogleClientId(process.env.GOOGLE_CLIENT_ID);
     if (!googleClientId) {
-      throw new ValidationError("Google sign-in is not configured (GOOGLE_CLIENT_ID)");
+      logger.error({
+        message: "Google sign-in is not configured",
+        missing: "GOOGLE_CLIENT_ID",
+        correlationId: req.correlationId,
+      });
+      throw new AppError("Google sign-in is temporarily unavailable. Please try again later.", 503);
     }
 
     const googleOAuthClient = new OAuth2Client(googleClientId);
 
-    let { idToken } = req.body;
-    if (!idToken || typeof idToken !== "string") {
-      throw new ValidationError("idToken is required");
-    }
-    idToken = idToken.trim();
+    const body = requirePlainObject(req.body);
+    rejectUnknownFields(body, ["idToken"]);
+    const idToken = cleanString(body.idToken, "idToken", { required: true, max: 4096 });
 
     let ticket;
     try {
@@ -175,9 +210,7 @@ async function googleLogin(req, res, next) {
         err: verifyErr.message,
         correlationId: req.correlationId,
       });
-      throw new UnauthorizedError(
-        "Google sign-in could not be verified. Use the same Web client ID in GOOGLE_CLIENT_ID as in VITE_GOOGLE_CLIENT_ID (no extra spaces or quotes)."
-      );
+      throw new UnauthorizedError("Google sign-in could not be verified. Please try again.");
     }
 
     const payload = ticket.getPayload();
@@ -221,7 +254,7 @@ async function googleLogin(req, res, next) {
       }
     }
 
-    const token = signToken({ id: user._id, email: user.email, role: user.role });
+    const token = await issueSessionForUser(user);
 
     logger.info({
       message: "User logged in with Google",
@@ -309,6 +342,28 @@ async function completeOnboarding(req, res, next) {
   }
 }
 
+async function logout(req, res, next) {
+  try {
+    await User.findByIdAndUpdate(req.user.id, {
+      $set: {
+        activeSessionId: null,
+        activeSessionStartedAt: null,
+        sessionLastSeenAt: null,
+      },
+    });
+
+    logger.info({
+      message: "User logged out",
+      userId: String(req.user.id),
+      correlationId: req.correlationId,
+    });
+
+    res.json({ message: "Logged out successfully." });
+  } catch (err) {
+    next(err);
+  }
+}
+
 const RESET_TOKEN_BYTES = 32;
 const RESET_EXPIRY_MS = 60 * 60 * 1000;
 
@@ -321,29 +376,22 @@ function getFrontendBaseUrl() {
   return typeof raw === "string" ? raw.replace(/\/$/, "") : "http://localhost:5173";
 }
 
-/** Shown in API + UI when mail is not wired (dev). Same for all outcomes — does not reveal if the address exists. */
-function forgotPasswordDevHint() {
-  if (process.env.NODE_ENV === "production") return undefined;
-  const h = process.env.SMTP_HOST;
-  if (h && typeof h === "string" && h.trim()) return undefined;
-  return "No email was sent: SMTP is not configured on the gateway. Add SMTP_* to .env (see gateway .env.example), or copy the reset link from the gateway logs when testing locally.";
-}
-
 /**
  * Same response whether or not the email exists (avoid account enumeration).
  */
 async function forgotPassword(req, res, next) {
   const genericMessage =
     "If an account exists for that email, a reset link has been sent.";
-  const hint = forgotPasswordDevHint();
 
   try {
-    const emailRaw = req.body && req.body.email;
-    const email =
-      typeof emailRaw === "string" ? emailRaw.toLowerCase().trim() : "";
-    if (!email) {
-      throw new ValidationError("Email is required");
+    const body = requirePlainObject(req.body);
+    rejectUnknownFields(body, ["email"]);
+    const emailRaw = body.email;
+    const emailError = getEmailValidationError(emailRaw);
+    if (emailError) {
+      throw new ValidationError(emailError);
     }
+    const email = normalizeEmail(emailRaw);
 
     const user = await User.findOne({ email });
 
@@ -353,10 +401,7 @@ async function forgotPassword(req, res, next) {
         email,
         correlationId: req.correlationId,
       });
-      return res.json({
-        message: genericMessage,
-        ...(hint ? { devHint: hint } : {}),
-      });
+      return res.json({ message: genericMessage });
     }
 
     const rawToken = crypto.randomBytes(RESET_TOKEN_BYTES).toString("hex");
@@ -381,7 +426,7 @@ async function forgotPassword(req, res, next) {
       await user.save();
       return next(
         new AppError(
-          "Unable to send reset email. Check SMTP settings or try again later.",
+          "We could not send the reset email right now. Please try again later.",
           503
         )
       );
@@ -393,10 +438,7 @@ async function forgotPassword(req, res, next) {
       correlationId: req.correlationId,
     });
 
-    res.json({
-      message: genericMessage,
-      ...(hint ? { devHint: hint } : {}),
-    });
+    res.json({ message: genericMessage });
   } catch (err) {
     next(err);
   }
@@ -404,12 +446,15 @@ async function forgotPassword(req, res, next) {
 
 async function resetPassword(req, res, next) {
   try {
-    const tokenRaw = req.body && req.body.token;
-    const password = req.body && req.body.password;
-    const token = typeof tokenRaw === "string" ? tokenRaw.trim() : "";
-    if (!token || !password) {
-      throw new ValidationError("Token and password are required");
-    }
+    const body = requirePlainObject(req.body);
+    rejectUnknownFields(body, ["token", "password"]);
+    const token = cleanString(body.token, "token", {
+      required: true,
+      max: 64,
+      pattern: /^[a-f0-9]{64}$/i,
+    });
+    const password = body.password;
+    if (!password) throw new ValidationError("Token and password are required");
     const passwordError = getPasswordValidationError(password);
     if (passwordError) {
       throw new ValidationError(passwordError);
@@ -450,4 +495,5 @@ module.exports = {
   resetPassword,
   getAppEntryStatus,
   completeOnboarding,
+  logout,
 };

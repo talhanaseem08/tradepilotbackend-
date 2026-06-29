@@ -4,9 +4,9 @@
 
 **Goal:** Build the trading service: bot system (BaseBot + sample LowRiskBot), backtesting engine, data provider and broker adapter abstractions, trade executor with mandatory sentiment gate, and Redis state tracking for bot status and consecutive losses.
 
-**Architecture:** Trading service (FastAPI, port 8002) manages bot lifecycles, runs backtesting against cached data, executes trades through BrokerAdapter abstraction (Paper/MT5/CCXT), enforces sentiment gate by calling NLP service before every trade, and tracks bot state + consecutive losses in Redis.
+**Architecture:** Trading service (FastAPI, port 8002) manages bot lifecycles, runs backtesting against cached data, executes trades through BrokerAdapter abstraction (Paper/OANDA/Binance), enforces sentiment gate by calling NLP service before every trade, and tracks bot state + consecutive losses in Redis.
 
-**Tech Stack:** FastAPI, motor (MongoDB), redis, httpx, pandas, numpy, ccxt, MetaTrader5 (Windows-only)
+**Tech Stack:** FastAPI, motor (MongoDB), redis, httpx, pandas, numpy, ccxt
 
 ---
 
@@ -975,7 +975,7 @@ git commit -m "feat(trading): add bot and backtest routers, update health with N
 - ✅ Health check reports NLP reachability
 
 **Not in scope (Phase 4):**
-- MT5 adapter, CCXT adapter (just abstractions created)
+- OANDA adapter, Binance/CCXT adapter (broker abstractions)
 - OANDA/Binance data providers (just abstract interface)
 - Redis Streams for agent trigger communication
 - DeepSeek agent integration

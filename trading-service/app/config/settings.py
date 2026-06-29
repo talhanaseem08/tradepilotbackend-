@@ -25,12 +25,6 @@ class Settings(BaseSettings):
     binance_api_secret: str = ""
     binance_sandbox: bool = True
 
-    # MetaTrader 5
-    mt5_login: int = 0
-    mt5_password: str = ""
-    mt5_server: str = ""
-    mt5_path: str = ""
-
     class Config:
         env_file = ".env"
         extra = "ignore"

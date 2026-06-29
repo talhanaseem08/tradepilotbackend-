@@ -10,6 +10,7 @@ const redis = require("./config/redis");
 const logger = require("./utils/logger");
 const errorHandler = require("./middleware/errorHandler");
 const correlationId = require("./middleware/correlationId");
+const requestSanitizer = require("./middleware/requestSanitizer");
 const authRoutes = require("./routes/authRoutes");
 const proxyRoutes = require("./routes/proxyRoutes");
 const brokerRoutes = require("./routes/brokerRoutes");
@@ -17,14 +18,6 @@ const userRoutes = require("./routes/userRoutes");
 const { initWebSocket, broadcastServiceHealth } = require("./services/websocketManager");
 const { initRedisPubSub } = require("./services/redisPubSub");
 const { getServicesHealthPayload } = require("./services/serviceProxy");
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: "Too many auth attempts, please try again later" },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -63,8 +56,9 @@ app.use(
   })
 );
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "100kb" }));
 app.use(correlationId);
+app.use(requestSanitizer);
 
 app.get("/health", async (_req, res) => {
   const redisOk = redis.status === "ready";
@@ -78,7 +72,7 @@ app.get("/health", async (_req, res) => {
 });
 
 // API routes before static files so /api/* is never shadowed by public assets
-app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/broker", apiLimiter, brokerRoutes);
 app.use("/api/users", apiLimiter, userRoutes);
 app.use("/api", apiLimiter, proxyRoutes);

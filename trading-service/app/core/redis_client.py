@@ -56,3 +56,29 @@ async def get_backup_params(bot_id: str) -> dict:
     redis = await get_redis()
     raw = await redis.hgetall(f"bot:{bot_id}:params:backup")
     return dict(raw) if raw else {}
+
+
+async def set_bot_runtime_value(bot_id: str, key: str, value: str):
+    redis = await get_redis()
+    await redis.set(f"bot:{bot_id}:runtime:{key}", value)
+
+
+async def get_bot_runtime_value(bot_id: str, key: str) -> str | None:
+    redis = await get_redis()
+    value = await redis.get(f"bot:{bot_id}:runtime:{key}")
+    return value or None
+
+
+async def delete_bot_state(bot_id: str):
+    redis = await get_redis()
+    keys = [
+        f"bot:{bot_id}:status",
+        f"bot:{bot_id}:losses",
+        f"bot:{bot_id}:params",
+        f"bot:{bot_id}:params:backup",
+    ]
+    runtime_keys = await redis.keys(f"bot:{bot_id}:runtime:*")
+    if runtime_keys:
+        keys.extend(runtime_keys)
+    if keys:
+        await redis.delete(*keys)

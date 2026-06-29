@@ -2,6 +2,11 @@ const crypto = require("crypto");
 const BrokerAccount = require("../models/BrokerAccount");
 const { proxyRequest } = require("../services/serviceProxy");
 const { ValidationError } = require("../utils/errors");
+const {
+  normalizeBinancePayload,
+  normalizeBrokerType,
+  normalizeOandaPayload,
+} = require("../utils/brokerValidation");
 const logger = require("../utils/logger");
 
 const ALGO = "aes-256-gcm";
@@ -40,70 +45,52 @@ function decrypt(stored) {
   }
 }
 
-async function setupMT5Account(req, res, next) {
+function validateBrokerInput(normalize, value) {
   try {
-    const { login, password, server } = req.body;
-
-    if (!login || !password || !server) {
-      throw new ValidationError("MT5 login, password, and server are required");
-    }
-
-    const verifyResult = await proxyRequest("trading", "POST", "/broker/verify/mt5", {
-      login: parseInt(login),
-      password,
-      server,
-    }, req.correlationId);
-
-    if (!verifyResult.success) {
-      return res.status(400).json({
-        error: "Failed to connect to MT5 account",
-        details: verifyResult.error,
-      });
-    }
-
-    await BrokerAccount.findOneAndUpdate(
-      { userID: req.user.id, brokerName: "mt5" },
-      {
-        userID: req.user.id,
-        brokerName: "mt5",
-        login: parseInt(login),
-        passwordHash: encrypt(password),
-        server,
-        isVerified: true,
-        lastVerified: new Date(),
-      },
-      { upsert: true, new: true }
-    );
-
-    logger.info({
-      message: "MT5 account setup successful",
-      userId: req.user.id,
-      login,
-      correlationId: req.correlationId,
-    });
-
-    res.json({
-      success: true,
-      message: "MT5 account connected successfully",
-      accountInfo: {
-        login,
-        server,
-        balance: verifyResult.balance,
-        equity: verifyResult.equity,
-      },
-    });
+    return normalize(value);
   } catch (err) {
-    next(err);
+    throw new ValidationError(err.message || "Invalid broker credentials");
   }
+}
+
+function brokerConnectionMessage(brokerLabel) {
+  return `We could not connect to your ${brokerLabel} account. Please check the details and try again.`;
+}
+
+function brokerErrorResponse(req, res, status, message) {
+  return res.status(status).json({
+    error: {
+      message,
+      correlationId: req.correlationId,
+    },
+  });
+}
+
+function logBrokerVerificationFailure(req, brokerName, verifyResult) {
+  logger.warn({
+    message: "Broker verification failed",
+    brokerName,
+    userId: req.user.id,
+    upstreamError: verifyResult?.error,
+    correlationId: req.correlationId,
+  });
+}
+
+function brokerCredentialReadFailed(req, brokerName) {
+  logger.error({
+    message: "Broker credential decrypt failed",
+    brokerName,
+    userId: req.user.id,
+    correlationId: req.correlationId,
+  });
+  return {
+    message: `We could not verify your ${brokerName.toUpperCase()} connection right now. Please reconnect the account.`,
+  };
 }
 
 async function setupOandaAccount(req, res, next) {
   try {
-    const { apiKey, accountId, environment = "practice" } = req.body;
-
-    if (!apiKey || !accountId) {
-      throw new ValidationError("OANDA API key and account ID are required");
-    }
+    const { apiKey, accountId, environment } = validateBrokerInput(normalizeOandaPayload, req.body);
 
     const verifyResult = await proxyRequest("trading", "POST", "/broker/verify/oanda", {
       apiKey,
@@ -112,10 +99,8 @@ async function setupOandaAccount(req, res, next) {
     }, req.correlationId);
 
     if (!verifyResult.success) {
-      return res.status(400).json({
-        error: "Failed to connect to OANDA account",
-        details: verifyResult.error,
-      });
+      logBrokerVerificationFailure(req, "oanda", verifyResult);
+      return brokerErrorResponse(req, res, 400, brokerConnectionMessage("OANDA"));
     }
 
     await BrokerAccount.findOneAndUpdate(
@@ -157,11 +142,7 @@ async function setupOandaAccount(req, res, next) {
 
 async function setupBinanceAccount(req, res, next) {
   try {
-    const { apiKey, secretKey, isTestnet = true } = req.body;
-
-    if (!apiKey || !secretKey) {
-      throw new ValidationError("Binance API key and secret key are required");
-    }
+    const { apiKey, secretKey, isTestnet } = validateBrokerInput(normalizeBinancePayload, req.body);
 
     const verifyResult = await proxyRequest(
       "trading",
@@ -176,10 +157,8 @@ async function setupBinanceAccount(req, res, next) {
     );
 
     if (!verifyResult.success) {
-      return res.status(400).json({
-        error: "Failed to connect to Binance account",
-        details: verifyResult.error,
-      });
+      logBrokerVerificationFailure(req, "binance", verifyResult);
+      return brokerErrorResponse(req, res, 400, brokerConnectionMessage("Binance"));
     }
 
     await BrokerAccount.findOneAndUpdate(
@@ -219,7 +198,7 @@ async function setupBinanceAccount(req, res, next) {
 
 async function verifyBrokerConnection(req, res, next) {
   try {
-    const { brokerType } = req.params;
+    const brokerType = validateBrokerInput(normalizeBrokerType, req.params.brokerType);
 
     const account = await BrokerAccount.findOne({
       userID: req.user.id,
@@ -227,22 +206,17 @@ async function verifyBrokerConnection(req, res, next) {
     });
 
     if (!account) {
-      return res.status(404).json({ error: `${brokerType} account not configured` });
+      return brokerErrorResponse(req, res, 404, "This broker account is not connected yet.");
     }
 
     let verifyResult;
 
-    if (brokerType === "mt5") {
-      const password = decrypt(account.passwordHash);
-      if (!password) return res.status(500).json({ error: "Failed to decrypt MT5 credentials" });
-      verifyResult = await proxyRequest("trading", "POST", "/broker/verify/mt5", {
-        login: account.login,
-        password,
-        server: account.server,
-      }, req.correlationId);
-    } else if (brokerType === "oanda") {
+    if (brokerType === "oanda") {
       const apiKey = decrypt(account.apiKey);
-      if (!apiKey) return res.status(500).json({ error: "Failed to decrypt OANDA credentials" });
+      if (!apiKey) {
+        const safeError = brokerCredentialReadFailed(req, "oanda");
+        return brokerErrorResponse(req, res, 500, safeError.message);
+      }
       verifyResult = await proxyRequest("trading", "POST", "/broker/verify/oanda", {
         apiKey,
         accountId: account.accountId,
@@ -252,7 +226,8 @@ async function verifyBrokerConnection(req, res, next) {
       const apiKey = decrypt(account.apiKey);
       const secretKey = decrypt(account.secretKey);
       if (!apiKey || !secretKey) {
-        return res.status(500).json({ error: "Failed to decrypt Binance credentials" });
+        const safeError = brokerCredentialReadFailed(req, "binance");
+        return brokerErrorResponse(req, res, 500, safeError.message);
       }
       verifyResult = await proxyRequest("trading", "POST", "/broker/verify/binance", {
         apiKey,
@@ -276,9 +251,10 @@ async function verifyBrokerConnection(req, res, next) {
 
 async function getBrokerAccounts(req, res, next) {
   try {
-    const accounts = await BrokerAccount.find({ userID: req.user.id }).select(
-      "-passwordHash -apiKey -secretKey"
-    );
+    const accounts = await BrokerAccount.find({
+      userID: req.user.id,
+      brokerName: { $in: ["oanda", "binance"] },
+    }).select("-apiKey -secretKey");
 
     const result = {};
     for (const acct of accounts) {
@@ -286,7 +262,6 @@ async function getBrokerAccounts(req, res, next) {
         brokerName: acct.brokerName,
         isVerified: acct.isVerified,
         lastVerified: acct.lastVerified,
-        ...(acct.brokerName === "mt5" && { login: acct.login, server: acct.server }),
         ...(acct.brokerName === "oanda" && { accountId: acct.accountId, environment: acct.environment }),
         ...(acct.brokerName === "binance" && { isTestnet: acct.isTestnet }),
       };
@@ -299,7 +274,6 @@ async function getBrokerAccounts(req, res, next) {
 }
 
 module.exports = {
-  setupMT5Account,
   setupOandaAccount,
   setupBinanceAccount,
   verifyBrokerConnection,
