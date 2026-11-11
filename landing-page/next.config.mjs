@@ -1,10 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    devIndicators: {
-        appIsrStatus: false,
-        buildActivity: false,
-        buildActivityPosition: 'bottom-right',
-    },
+  output: "export",
+  images: {
+    unoptimized: true,
+  },
+  devIndicators: false,
 };
 
 export default nextConfig;
